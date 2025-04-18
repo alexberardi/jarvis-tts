@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Request, Response
-import subprocess
+from piper import PiperVoice
 from pathlib import Path
+from io import BytesIO
+import wave
 
 app = FastAPI()
 
-OUTPUT_FILE = Path("/tmp/tts.wav")
-MODEL_PATH = "app/models/en_GB-alan-low.onnx"
+VOICE_DIR = Path("app/models")
+MODEL_PATH = VOICE_DIR / "en_GB-alan-low.onnx"
+CONFIG_PATH = VOICE_DIR / "en_GB-alan-low.onnx.json"
+
+voice = PiperVoice.load(model_path=MODEL_PATH, config_path=CONFIG_PATH)
 
 @app.post("/speak")
 async def speak(request: Request):
@@ -14,15 +19,10 @@ async def speak(request: Request):
     if not text:
         return {"error": "No text provided"}
 
-    # Generate TTS audio
-    subprocess.run([
-        "piper",
-        "--model", MODEL_PATH,
-        "--text", text,
-        "--output_file", str(OUTPUT_FILE)
-    ], check=True)
+    buf = BytesIO()
+    with wave.open(buf, 'wb') as wav_file:
+        voice.synthesize(text, wav_file=wav_file)
+    audio_bytes = buf.getvalue()
 
-    # Read and return the WAV audio directly
-    audio_bytes = OUTPUT_FILE.read_bytes()
     return Response(content=audio_bytes, media_type="audio/wav")
 
