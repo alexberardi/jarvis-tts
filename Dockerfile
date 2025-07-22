@@ -16,11 +16,11 @@ COPY app /app/app
 
 # Download Piper model and config from csukuangfj's repo
 RUN mkdir -p /app/app/models && \
-    wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/low/en_GB-alan-low.onnx?download=true \
+    wget https://huggingface.co/csukuangfj/vits-piper-en_GB-alan-low/resolve/main/en_GB-alan-low.onnx \
          -O /app/app/models/en_GB-alan-low.onnx && \
-    wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/low/en_GB-alan-low.onnx.json?download=true.json \
+    wget https://huggingface.co/csukuangfj/vits-piper-en_GB-alan-low/resolve/main/en_GB-alan-low.onnx.json \
          -O /app/app/models/en_GB-alan-low.onnx.json
 
 VOLUME /tmp
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
 

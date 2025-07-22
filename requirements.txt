@@ -2,4 +2,5 @@ fastapi
 uvicorn
 uuid
 piper-tts
-
+python-dotenv
+httpx
