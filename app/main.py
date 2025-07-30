@@ -27,13 +27,30 @@ async def speak(request: Request):
     if not text:
         return {"error": "No text provided"}
 
+    # Get the generator from Piper
+    audio_chunks = voice.synthesize(text)
+
+    # Grab first chunk to read audio properties
+    first_chunk = next(audio_chunks)
+    sample_rate = first_chunk.sample_rate
+    channels = first_chunk.sample_channels
+    sample_width = first_chunk.sample_width  # in bytes (should be 2 for 16-bit PCM)
+
+    # Prepare in-memory WAV buffer
     buf = BytesIO()
     with wave.open(buf, 'wb') as wav_file:
-        voice.synthesize(text, wav_file=wav_file)
-    audio_bytes = buf.getvalue()
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
 
-    return Response(content=audio_bytes, media_type="audio/wav")
+        # Write first chunk
+        wav_file.writeframes(first_chunk.audio_int16_bytes)
 
+        # Write remaining chunks
+        for chunk in audio_chunks:
+            wav_file.writeframes(chunk.audio_int16_bytes)
+
+    return Response(content=buf.getvalue(), media_type="audio/wav")
 
 @app.post("/generate-wake-response")
 async def generate_wake_response():
