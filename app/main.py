@@ -74,6 +74,11 @@ voice = PiperVoice.load(model_path=MODEL_PATH, config_path=CONFIG_PATH)
 def pong():
     return {"message": "pong"}
 
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
 @app.post("/speak")
 async def speak(request: Request, node_id: str = Depends(verify_node_auth)):
     data = await request.json()
