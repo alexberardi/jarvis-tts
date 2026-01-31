@@ -4,4 +4,4 @@ uuid
 piper-tts
 python-dotenv
 httpx
-jarvis-log-client
+# jarvis-log-client installed from local mount at runtime
