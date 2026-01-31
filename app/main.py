@@ -1,3 +1,6 @@
+import onnxruntime as ort
+ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
+
 from fastapi import FastAPI, Request, Response
 from piper import PiperVoice
 from pathlib import Path
