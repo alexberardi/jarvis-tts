@@ -22,5 +22,7 @@ RUN mkdir -p /app/app/models && \
          -O /app/app/models/en_GB-alan-low.onnx.json
 
 VOLUME /tmp
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+
+ENV TTS_PORT=8009
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT}
 
