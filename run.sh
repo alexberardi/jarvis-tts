@@ -1,16 +1,33 @@
 #!/bin/bash
+# Development server with hot reload
+# Usage: ./run.sh [--docker]
 
-# Load environment variables from .env
-set -a
-source "$(dirname "$0")/.env"
-set +a
+set -e
+cd "$(dirname "$0")"
 
-# Default port if not set
-TTS_PORT="${TTS_PORT:-8009}"
+if [[ "$1" == "--docker" ]]; then
+    # Docker development mode
+    BUILD_FLAGS=""
+    if [[ "$2" == "--rebuild" ]]; then
+        docker compose --env-file .env -f docker-compose.dev.yaml build --no-cache
+        BUILD_FLAGS="--build"
+    elif [[ "$2" == "--build" ]]; then
+        BUILD_FLAGS="--build"
+    fi
+    docker compose --env-file .env -f docker-compose.dev.yaml up $BUILD_FLAGS
+else
+    # Local development mode
+    set -a
+    source .env
+    set +a
 
-docker run --rm -it \
-    --init \
-    -p "${TTS_PORT}:${TTS_PORT}" \
-    -e TTS_PORT="${TTS_PORT}" \
-    --env-file .env \
-    jarvis-tts
+    # Activate venv if it exists
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+    fi
+
+    # Install jarvis-log-client from local path
+    pip install -q -e ../jarvis-log-client 2>/dev/null || echo "Note: jarvis-log-client not found, remote logging disabled"
+
+    uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT:-8009} --reload
+fi
