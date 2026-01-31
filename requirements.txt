@@ -4,3 +4,4 @@ uuid
 piper-tts
 python-dotenv
 httpx
+jarvis-log-client
