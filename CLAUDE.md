@@ -5,12 +5,11 @@ Text-to-speech service using Piper TTS with ONNX runtime.
 ## Quick Reference
 
 ```bash
-# Run (Docker)
-docker-compose up -d
+# Run (Docker dev with hot reload + logging)
+./run-docker-dev.sh
 
-# Or direct
-pip install -r requirements.txt
-uvicorn app.main:app --port 8009
+# Or direct (local dev)
+./run-dev.sh
 
 # Test (requires valid node auth)
 curl -X POST http://localhost:8009/speak \
