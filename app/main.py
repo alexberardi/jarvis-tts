@@ -1,3 +1,4 @@
+import logging
 import os
 import wave
 from io import BytesIO
@@ -14,7 +15,54 @@ from app.deps import verify_node_auth
 ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
 load_dotenv()
 
-app = FastAPI()
+# Set up logging
+console_level = os.getenv("JARVIS_LOG_CONSOLE_LEVEL", "INFO")
+logging.basicConfig(
+    level=getattr(logging, console_level.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logger = logging.getLogger("uvicorn")
+
+# Remote logging handler (initialized in startup event)
+_jarvis_handler = None
+
+
+def _setup_remote_logging() -> None:
+    """Set up remote logging to jarvis-logs server."""
+    global _jarvis_handler
+    try:
+        from jarvis_log_client import init as init_log_client, JarvisLogHandler
+
+        app_id = os.getenv("JARVIS_APP_ID", "jarvis-tts")
+        app_key = os.getenv("JARVIS_APP_KEY")
+        if not app_key:
+            logger.warning("JARVIS_APP_KEY not set, remote logging disabled")
+            return
+
+        init_log_client(app_id=app_id, app_key=app_key)
+
+        remote_level = os.getenv("JARVIS_LOG_REMOTE_LEVEL", "DEBUG")
+        _jarvis_handler = JarvisLogHandler(
+            service="jarvis-tts",
+            level=getattr(logging, remote_level.upper(), logging.DEBUG),
+        )
+
+        for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
+            logging.getLogger(logger_name).addHandler(_jarvis_handler)
+
+        logger.info("Remote logging enabled to jarvis-logs")
+    except ImportError:
+        logger.debug("jarvis-log-client not installed, remote logging disabled")
+
+
+app = FastAPI(title="Jarvis TTS", version="1.0.0")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on app startup."""
+    _setup_remote_logging()
+    logger.info("Jarvis TTS service started")
 
 VOICE_DIR = Path("app/models")
 MODEL_PATH = VOICE_DIR / "en_GB-alan-low.onnx"
@@ -62,7 +110,7 @@ async def speak(request: Request, node_id: str = Depends(verify_node_auth)):
 async def generate_wake_response(node_id: str = Depends(verify_node_auth)):
     llm_proxy_version = os.getenv("JARVIS_LLM_PROXY_API_VERSION")
     llm_proxy_url = f"{os.getenv('JARVIS_LLM_PROXY_API_URL')}/api/v{llm_proxy_version}/lightweight/chat"
-    print(llm_proxy_url)
+    logger.debug(f"Calling LLM proxy at {llm_proxy_url}")
     
     system_prompt = (
         "You are Jarvis, a voice assistant butler. The user has just called you for help. "
