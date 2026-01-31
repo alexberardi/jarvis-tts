@@ -8,6 +8,10 @@ set +a
 # Default port if not set
 TTS_PORT="${TTS_PORT:-8009}"
 
+# Stop and remove existing container if running
+docker stop jarvis-tts 2>/dev/null
+docker rm jarvis-tts 2>/dev/null
+
 docker run -d \
     --init \
     --name jarvis-tts \
