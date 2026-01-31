@@ -1,14 +1,17 @@
-import onnxruntime as ort
-ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
-
-from fastapi import FastAPI, Request, Response
-from piper import PiperVoice
-from pathlib import Path
-from io import BytesIO
-import wave
-from dotenv import load_dotenv
 import os
+import wave
+from io import BytesIO
+from pathlib import Path
+
 import httpx
+import onnxruntime as ort
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Request, Response
+from piper import PiperVoice
+
+from app.deps import verify_node_auth
+
+ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
 load_dotenv()
 
 app = FastAPI()
@@ -24,7 +27,7 @@ def pong():
     return {"message": "pong"}
 
 @app.post("/speak")
-async def speak(request: Request):
+async def speak(request: Request, node_id: str = Depends(verify_node_auth)):
     data = await request.json()
     text = data.get("text", "")
     if not text:
@@ -56,7 +59,7 @@ async def speak(request: Request):
     return Response(content=buf.getvalue(), media_type="audio/wav")
 
 @app.post("/generate-wake-response")
-async def generate_wake_response():
+async def generate_wake_response(node_id: str = Depends(verify_node_auth)):
     llm_proxy_version = os.getenv("JARVIS_LLM_PROXY_API_VERSION")
     llm_proxy_url = f"{os.getenv('JARVIS_LLM_PROXY_API_URL')}/api/v{llm_proxy_version}/lightweight/chat"
     print(llm_proxy_url)
