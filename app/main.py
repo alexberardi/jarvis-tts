@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request, Response
 from piper import PiperVoice
 
-from app.deps import verify_node_auth
+from app.deps import verify_app_auth
+from jarvis_auth_client.models import AppAuthResult
 
 ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
 load_dotenv()
@@ -80,7 +81,11 @@ def health():
     return {"status": "healthy"}
 
 @app.post("/speak")
-async def speak(request: Request, node_id: str = Depends(verify_node_auth)):
+async def speak(request: Request, auth: AppAuthResult = Depends(verify_app_auth)):
+    logger.debug(
+        f"TTS request from {auth.app.app_id} "
+        f"for household {auth.context.household_id}, node {auth.context.node_id}"
+    )
     data = await request.json()
     text = data.get("text", "")
     if not text:
@@ -112,7 +117,11 @@ async def speak(request: Request, node_id: str = Depends(verify_node_auth)):
     return Response(content=buf.getvalue(), media_type="audio/wav")
 
 @app.post("/generate-wake-response")
-async def generate_wake_response(node_id: str = Depends(verify_node_auth)):
+async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth)):
+    logger.debug(
+        f"Wake response request from {auth.app.app_id} "
+        f"for household {auth.context.household_id}, node {auth.context.node_id}"
+    )
     llm_proxy_version = os.getenv("JARVIS_LLM_PROXY_API_VERSION")
     llm_proxy_url = f"{os.getenv('JARVIS_LLM_PROXY_API_URL')}/api/v{llm_proxy_version}/lightweight/chat"
     logger.debug(f"Calling LLM proxy at {llm_proxy_url}")

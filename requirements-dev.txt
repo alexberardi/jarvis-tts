@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=7.0.0
+pytest-httpx>=0.21.0
+# jarvis-auth-client installed from local mount at runtime
