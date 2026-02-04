@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import wave
@@ -11,6 +12,12 @@ from fastapi import Depends, FastAPI, Request, Response
 from piper import PiperVoice
 
 from app.deps import verify_node_auth
+
+try:
+    from jarvis_log_client import JarvisLogHandler, init as init_log_client
+    _jarvis_log_available = True
+except ImportError:
+    _jarvis_log_available = False
 
 ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
 load_dotenv()
@@ -30,29 +37,29 @@ _jarvis_handler = None
 def _setup_remote_logging() -> None:
     """Set up remote logging to jarvis-logs server."""
     global _jarvis_handler
-    try:
-        from jarvis_log_client import init as init_log_client, JarvisLogHandler
 
-        app_id = os.getenv("JARVIS_APP_ID", "jarvis-tts")
-        app_key = os.getenv("JARVIS_APP_KEY")
-        if not app_key:
-            logger.warning("JARVIS_APP_KEY not set, remote logging disabled")
-            return
-
-        init_log_client(app_id=app_id, app_key=app_key)
-
-        remote_level = os.getenv("JARVIS_LOG_REMOTE_LEVEL", "DEBUG")
-        _jarvis_handler = JarvisLogHandler(
-            service="jarvis-tts",
-            level=getattr(logging, remote_level.upper(), logging.DEBUG),
-        )
-
-        for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
-            logging.getLogger(logger_name).addHandler(_jarvis_handler)
-
-        logger.info("Remote logging enabled to jarvis-logs")
-    except ImportError:
+    if not _jarvis_log_available:
         logger.debug("jarvis-log-client not installed, remote logging disabled")
+        return
+
+    app_id = os.getenv("JARVIS_APP_ID", "jarvis-tts")
+    app_key = os.getenv("JARVIS_APP_KEY")
+    if not app_key:
+        logger.warning("JARVIS_APP_KEY not set, remote logging disabled")
+        return
+
+    init_log_client(app_id=app_id, app_key=app_key)
+
+    remote_level = os.getenv("JARVIS_LOG_REMOTE_LEVEL", "DEBUG")
+    _jarvis_handler = JarvisLogHandler(
+        service="jarvis-tts",
+        level=getattr(logging, remote_level.upper(), logging.DEBUG),
+    )
+
+    for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
+        logging.getLogger(logger_name).addHandler(_jarvis_handler)
+
+    logger.info("Remote logging enabled to jarvis-logs")
 
 
 app = FastAPI(title="Jarvis TTS", version="1.0.0")
@@ -143,7 +150,8 @@ async def generate_wake_response(node_id: str = Depends(verify_node_auth)):
                 try:
                     chunk = httpx.Response(200, content=line).json()
                     full_text += chunk.get("response", "")
-                except Exception:
+                except json.JSONDecodeError as e:
+                    logger.debug(f"Failed to parse LLM response chunk: {e}")
                     continue
 
     return {"text": full_text.strip() or "Yes?"}
