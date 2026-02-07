@@ -18,7 +18,6 @@ from jarvis_settings_client.types import SettingValue
 
 from app.services.settings_definitions import SETTINGS_DEFINITIONS
 from app.services.settings_service import (
-    TTSSettingsService,
     get_settings_service,
     reset_settings_service,
 )
@@ -57,36 +56,13 @@ class TestSettingsDefinitions:
         assert "auth.cache_ttl_seconds" in keys
 
 
-class TestTTSSettingsService:
-    """Tests for TTSSettingsService helper methods."""
-
-    @pytest.fixture
-    def service(self):
-        """Create a service instance for testing."""
-        return TTSSettingsService(
-            definitions=SETTINGS_DEFINITIONS,
-            get_db_session=lambda: None,
-            setting_model=None,
-        )
-
-    def test_get_tts_config(self, service):
-        """Test get_tts_config method."""
-        with patch.dict(os.environ, {
-            "JARVIS_LLM_PROXY_API_VERSION": "2",
-            "TTS_DEFAULT_VOICE": "en_US-joe-medium",
-        }):
-            config = service.get_tts_config()
-            assert config["llm_proxy_version"] == 2
-            assert config["default_voice"] == "en_US-joe-medium"
-
-
 class TestSettingsServiceCache:
     """Tests for SettingsService caching behavior."""
 
     @pytest.fixture
     def service(self):
         """Create a service instance for testing."""
-        return TTSSettingsService(
+        return SettingsService(
             definitions=SETTINGS_DEFINITIONS,
             get_db_session=lambda: None,
             setting_model=None,
@@ -164,7 +140,7 @@ class TestSettingsServiceEnvFallback:
     @pytest.fixture
     def service(self):
         """Create a service instance for testing."""
-        return TTSSettingsService(
+        return SettingsService(
             definitions=SETTINGS_DEFINITIONS,
             get_db_session=lambda: None,
             setting_model=None,
@@ -195,7 +171,7 @@ class TestSettingsServiceTypedGetters:
     @pytest.fixture
     def service(self):
         """Create a service instance for testing."""
-        return TTSSettingsService(
+        return SettingsService(
             definitions=SETTINGS_DEFINITIONS,
             get_db_session=lambda: None,
             setting_model=None,
@@ -222,7 +198,7 @@ class TestSettingsServiceListMethods:
     @pytest.fixture
     def service(self):
         """Create a service instance for testing."""
-        return TTSSettingsService(
+        return SettingsService(
             definitions=SETTINGS_DEFINITIONS,
             get_db_session=lambda: None,
             setting_model=None,
