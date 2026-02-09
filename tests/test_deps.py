@@ -6,6 +6,7 @@ Phase 4 Migration: Node auth -> App-to-app auth
 """
 
 import pytest
+import pytest_asyncio
 from fastapi import HTTPException
 from pytest_httpx import HTTPXMock
 
@@ -16,25 +17,26 @@ from jarvis_auth_client.models import AppAuthResult, RequestContext
 class TestVerifyAppAuth:
     """Test cases for verify_app_auth dependency (app-to-app authentication)."""
 
-    def setup_method(self) -> None:
-        """Initialize auth client before each test."""
+    @pytest_asyncio.fixture(autouse=True)
+    async def setup_auth(self):
+        """Initialize and tear down auth client for each test."""
         init(auth_base_url="http://localhost:8007")
-
-    async def teardown_method(self) -> None:
-        """Clean up after each test."""
+        yield
         await shutdown()
 
-    def test_missing_app_credentials_raises_401(self) -> None:
+    @pytest.mark.asyncio
+    async def test_missing_app_credentials_raises_401(self) -> None:
         """Should raise HTTPException when app credentials are missing."""
         from app.deps import verify_app_auth
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_app_auth()
+            await verify_app_auth()
 
         assert exc_info.value.status_code == 401
         assert "credentials" in exc_info.value.detail.lower()
 
-    def test_invalid_app_credentials_raises_401(self, httpx_mock: HTTPXMock) -> None:
+    @pytest.mark.asyncio
+    async def test_invalid_app_credentials_raises_401(self, httpx_mock: HTTPXMock) -> None:
         """Should raise HTTPException when app credentials are invalid."""
         httpx_mock.add_response(
             url="http://localhost:8007/internal/app-ping",
@@ -44,14 +46,15 @@ class TestVerifyAppAuth:
         from app.deps import verify_app_auth
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_app_auth(
+            await verify_app_auth(
                 x_jarvis_app_id="invalid-app",
                 x_jarvis_app_key="invalid-key",
             )
 
         assert exc_info.value.status_code == 401
 
-    def test_valid_app_credentials_returns_auth_result(
+    @pytest.mark.asyncio
+    async def test_valid_app_credentials_returns_auth_result(
         self, httpx_mock: HTTPXMock
     ) -> None:
         """Should return AppAuthResult with valid credentials."""
@@ -63,7 +66,7 @@ class TestVerifyAppAuth:
 
         from app.deps import verify_app_auth
 
-        result = verify_app_auth(
+        result = await verify_app_auth(
             x_jarvis_app_id="command-center",
             x_jarvis_app_key="secret-key",
         )
@@ -72,7 +75,8 @@ class TestVerifyAppAuth:
         assert result.app.valid is True
         assert result.app.app_id == "command-center"
 
-    def test_context_headers_are_extracted(self, httpx_mock: HTTPXMock) -> None:
+    @pytest.mark.asyncio
+    async def test_context_headers_are_extracted(self, httpx_mock: HTTPXMock) -> None:
         """Should extract context headers into RequestContext."""
         httpx_mock.add_response(
             url="http://localhost:8007/internal/app-ping",
@@ -82,7 +86,7 @@ class TestVerifyAppAuth:
 
         from app.deps import verify_app_auth
 
-        result = verify_app_auth(
+        result = await verify_app_auth(
             x_jarvis_app_id="command-center",
             x_jarvis_app_key="secret-key",
             x_context_household_id="household-123",
@@ -95,7 +99,8 @@ class TestVerifyAppAuth:
         assert result.context.node_id == "kitchen-pi"
         assert result.context.user_id == 42
 
-    def test_context_headers_optional(self, httpx_mock: HTTPXMock) -> None:
+    @pytest.mark.asyncio
+    async def test_context_headers_optional(self, httpx_mock: HTTPXMock) -> None:
         """Should work without context headers (they're optional)."""
         httpx_mock.add_response(
             url="http://localhost:8007/internal/app-ping",
@@ -105,7 +110,7 @@ class TestVerifyAppAuth:
 
         from app.deps import verify_app_auth
 
-        result = verify_app_auth(
+        result = await verify_app_auth(
             x_jarvis_app_id="command-center",
             x_jarvis_app_key="secret-key",
         )
@@ -114,7 +119,8 @@ class TestVerifyAppAuth:
         assert result.context.node_id is None
         assert result.context.user_id is None
 
-    def test_auth_service_unavailable_raises_401(self, httpx_mock: HTTPXMock) -> None:
+    @pytest.mark.asyncio
+    async def test_auth_service_unavailable_raises_401(self, httpx_mock: HTTPXMock) -> None:
         """Should raise 401 when auth service is unreachable."""
         import httpx as httpx_lib
 
@@ -126,7 +132,7 @@ class TestVerifyAppAuth:
         from app.deps import verify_app_auth
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_app_auth(
+            await verify_app_auth(
                 x_jarvis_app_id="command-center",
                 x_jarvis_app_key="secret-key",
             )
