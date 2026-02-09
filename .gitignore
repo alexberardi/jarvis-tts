@@ -12,6 +12,7 @@ app/models/*.onnx
 app/models/*.onnx.json
 
 # Python
+.coverage
 __pycache__/
 *.py[cod]
 *$py.class
