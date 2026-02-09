@@ -13,7 +13,7 @@ from jarvis_auth_client.models import AppAuthResult
 _app_auth_dep = _require_app_auth()
 
 
-def verify_app_auth(
+async def verify_app_auth(
     x_jarvis_app_id: str | None = None,
     x_jarvis_app_key: str | None = None,
     x_context_household_id: str | None = None,
@@ -33,10 +33,11 @@ def verify_app_auth(
     Raises:
         HTTPException: If authentication fails.
     """
-    return _app_auth_dep(
+    return await _app_auth_dep(
         x_jarvis_app_id=x_jarvis_app_id,
         x_jarvis_app_key=x_jarvis_app_key,
         x_context_household_id=x_context_household_id,
         x_context_node_id=x_context_node_id,
         x_context_user_id=x_context_user_id,
+        x_context_household_member_ids=None,
     )
