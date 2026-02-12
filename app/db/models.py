@@ -1,6 +1,5 @@
 """Database models for jarvis-tts."""
 
-from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
