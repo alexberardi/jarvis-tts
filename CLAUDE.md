@@ -55,8 +55,23 @@ app/
 
 ## Dependencies
 
-- **Runtime**: Python 3.12, FastAPI, uvicorn, piper-tts, onnxruntime
-- **Jarvis**: jarvis-log-client (for remote logging), httpx
+**Python Libraries:**
+- Python 3.12, FastAPI, uvicorn, piper-tts, onnxruntime
+- jarvis-log-client (for remote logging), httpx
+
+**Service Dependencies:**
+- ✅ **Required**: `jarvis-auth` (8007) - Node authentication validation
+- ⚠️ **Optional**: `jarvis-llm-proxy-api` (8000) - Generate wake response greetings
+- ⚠️ **Optional**: `jarvis-logs` (8006) - Centralized logging (degrades to console if unavailable)
+- ⚠️ **Optional**: `jarvis-config-service` (8013) - Service discovery
+
+**Used By:**
+- `jarvis-node-setup` - Text-to-speech for voice responses
+
+**Impact if Down:**
+- ❌ No voice responses from nodes
+- ❌ No wake word response greetings
+- ✅ Voice input and command processing still works
 
 ## Logging
 

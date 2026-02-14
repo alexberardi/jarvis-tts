@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-tts"
+version = "0.1.0"
+description = "Text-to-speech service using Piper TTS for the Jarvis ecosystem"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "piper-tts",
+    "python-dotenv",
+    "httpx",
+    "sqlalchemy>=2.0.23",
+    "alembic>=1.12.1",
+    "psycopg2-binary>=2.9.9",
+    "jarvis-settings-client @ git+https://github.com/alexberardi/jarvis-settings-client.git@main",
+    "jarvis-auth-client @ git+https://github.com/alexberardi/jarvis-auth-client.git@main",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-httpx>=0.21.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
