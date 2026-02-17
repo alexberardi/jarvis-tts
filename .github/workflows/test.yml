@@ -25,6 +25,7 @@ jobs:
           pip install fastapi uvicorn httpx python-dotenv
           pip install sqlalchemy alembic psycopg2-binary
           pip install pydantic pydantic-settings
+          pip install git+https://github.com/alexberardi/jarvis-config-client.git@main
           pip install git+https://github.com/alexberardi/jarvis-settings-client.git@main
           pip install git+https://github.com/alexberardi/jarvis-auth-client.git
 
