@@ -31,5 +31,5 @@ else
     source "${JARVIS_ROOT}/scripts/install-clients.sh"
     install_jarvis_clients log-client config-client auth-client settings-client
 
-    uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT:-8009} --reload
+    uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT:-7707} --reload
 fi

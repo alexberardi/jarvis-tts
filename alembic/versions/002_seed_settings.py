@@ -51,7 +51,7 @@ SETTINGS = [
     # Server configuration
     {
         "key": "server.port",
-        "value": "8009",
+        "value": "7707",
         "value_type": "int",
         "category": "server",
         "description": "API server port",

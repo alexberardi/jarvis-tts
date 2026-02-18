@@ -12,7 +12,7 @@ Text-to-speech service using Piper TTS with ONNX runtime.
 ./run-dev.sh
 
 # Test (requires valid node auth)
-curl -X POST http://localhost:8009/speak \
+curl -X POST http://localhost:7707/speak \
   -H "X-API-Key: node_id:node_key" \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world"}'
@@ -35,10 +35,10 @@ app/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TTS_PORT` | 8009 | API port |
+| `TTS_PORT` | 7707 | API port |
 | `JARVIS_LLM_PROXY_API_URL` | - | LLM proxy for wake responses |
 | `JARVIS_LLM_PROXY_API_VERSION` | 1 | LLM proxy API version |
-| `JARVIS_AUTH_BASE_URL` | http://localhost:8007 | Auth service URL |
+| `JARVIS_AUTH_BASE_URL` | http://localhost:7701 | Auth service URL |
 | `JARVIS_APP_ID` | jarvis-tts | App ID for auth |
 | `JARVIS_APP_KEY` | - | App key (required for auth) |
 | `NODE_AUTH_CACHE_TTL` | 60 | Cache TTL for auth validation |
@@ -60,10 +60,10 @@ app/
 - jarvis-log-client (for remote logging), httpx
 
 **Service Dependencies:**
-- ✅ **Required**: `jarvis-auth` (8007) - Node authentication validation
-- ⚠️ **Optional**: `jarvis-llm-proxy-api` (8000) - Generate wake response greetings
-- ⚠️ **Optional**: `jarvis-logs` (8006) - Centralized logging (degrades to console if unavailable)
-- ⚠️ **Optional**: `jarvis-config-service` (8013) - Service discovery
+- ✅ **Required**: `jarvis-auth` (7701) - Node authentication validation
+- ⚠️ **Optional**: `jarvis-llm-proxy-api` (7704) - Generate wake response greetings
+- ⚠️ **Optional**: `jarvis-logs` (7702) - Centralized logging (degrades to console if unavailable)
+- ⚠️ **Optional**: `jarvis-config-service` (7700) - Service discovery
 
 **Used By:**
 - `jarvis-node-setup` - Text-to-speech for voice responses
@@ -83,7 +83,7 @@ Configure with `JARVIS_LOG_CONSOLE_LEVEL` and `JARVIS_LOG_REMOTE_LEVEL`.
 ```bash
 # Build and run
 docker build -t jarvis-tts .
-docker run -p 8009:8009 --env-file .env jarvis-tts
+docker run -p 7707:7707 --env-file .env jarvis-tts
 ```
 
 The Dockerfile downloads the Piper voice model during build.
