@@ -25,7 +25,7 @@ A FastAPI-based text-to-speech service using Piper TTS for the Jarvis voice assi
    JARVIS_LLM_PROXY_API_VERSION=your_api_version
    ```
 4. Download the required voice models to `app/models/`
-5. Run the application: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+5. Run the application: `uvicorn app.main:app --host 0.0.0.0 --port 7707`
 
 ## Docker
 
@@ -33,21 +33,21 @@ Build and run with Docker:
 
 ```bash
 docker build -t jarvis-tts .
-docker run -p 8000:8000 jarvis-tts
+docker run -p 7707:7707 jarvis-tts
 ```
 
 ## Usage
 
 ### Text-to-Speech
 ```bash
-curl -X POST "http://localhost:8000/speak" \
+curl -X POST "http://localhost:7707/speak" \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello, I am Jarvis"}'
 ```
 
 ### Generate Wake Response
 ```bash
-curl -X POST "http://localhost:8000/generate-wake-response"
+curl -X POST "http://localhost:7707/generate-wake-response"
 ```
 
 ## Requirements

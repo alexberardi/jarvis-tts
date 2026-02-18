@@ -4,14 +4,14 @@ services:
   jarvis-tts:
     build: .
     ports:
-      - "${TTS_PORT:-8009}:${TTS_PORT:-8009}"
+      - "${TTS_PORT:-7707}:${TTS_PORT:-7707}"
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${TTS_PORT:-8009}/ping"]
+      test: ["CMD", "curl", "-f", "http://localhost:${TTS_PORT:-7707}/ping"]
       interval: 30s
       timeout: 10s
       retries: 3

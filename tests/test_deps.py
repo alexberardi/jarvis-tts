@@ -20,7 +20,7 @@ class TestVerifyAppAuth:
     @pytest_asyncio.fixture(autouse=True)
     async def setup_auth(self):
         """Initialize and tear down auth client for each test."""
-        init(auth_base_url="http://localhost:8007")
+        init(auth_base_url="http://localhost:7701")
         yield
         await shutdown()
 
@@ -39,7 +39,7 @@ class TestVerifyAppAuth:
     async def test_invalid_app_credentials_raises_401(self, httpx_mock: HTTPXMock) -> None:
         """Should raise HTTPException when app credentials are invalid."""
         httpx_mock.add_response(
-            url="http://localhost:8007/internal/app-ping",
+            url="http://localhost:7701/internal/app-ping",
             status_code=401,
         )
 
@@ -59,7 +59,7 @@ class TestVerifyAppAuth:
     ) -> None:
         """Should return AppAuthResult with valid credentials."""
         httpx_mock.add_response(
-            url="http://localhost:8007/internal/app-ping",
+            url="http://localhost:7701/internal/app-ping",
             status_code=200,
             json={"app_id": "command-center"},
         )
@@ -79,7 +79,7 @@ class TestVerifyAppAuth:
     async def test_context_headers_are_extracted(self, httpx_mock: HTTPXMock) -> None:
         """Should extract context headers into RequestContext."""
         httpx_mock.add_response(
-            url="http://localhost:8007/internal/app-ping",
+            url="http://localhost:7701/internal/app-ping",
             status_code=200,
             json={"app_id": "command-center"},
         )
@@ -103,7 +103,7 @@ class TestVerifyAppAuth:
     async def test_context_headers_optional(self, httpx_mock: HTTPXMock) -> None:
         """Should work without context headers (they're optional)."""
         httpx_mock.add_response(
-            url="http://localhost:8007/internal/app-ping",
+            url="http://localhost:7701/internal/app-ping",
             status_code=200,
             json={"app_id": "command-center"},
         )
@@ -126,7 +126,7 @@ class TestVerifyAppAuth:
 
         httpx_mock.add_exception(
             httpx_lib.ConnectError("Connection refused"),
-            url="http://localhost:8007/internal/app-ping",
+            url="http://localhost:7701/internal/app-ping",
         )
 
         from app.deps import verify_app_auth

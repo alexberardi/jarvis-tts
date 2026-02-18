@@ -4,7 +4,7 @@ services:
   jarvis-tts:
     build: .
     ports:
-      - "${TTS_PORT:-8009}:${TTS_PORT:-8009}"
+      - "${TTS_PORT:-7707}:${TTS_PORT:-7707}"
     volumes:
       - ./app:/app/app
       - ./.env:/app/.env
@@ -20,7 +20,7 @@ services:
       - "${DOCKER_HOST_ALIAS:-host.docker.internal}:host-gateway"
     command: >
       sh -c "pip install -q -e /app/jarvis-log-client -e /app/jarvis-config-client -e /app/jarvis-auth-client -e /app/jarvis-settings-client &&
-             uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT:-8009} --reload"
+             uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT:-7707} --reload"
 
   postgres:
     profiles: ["standalone"]

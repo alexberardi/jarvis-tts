@@ -283,11 +283,13 @@ class TestSetupRemoteLogging:
 class TestStartupEvent:
 
     def test_startup_calls_setup_remote_logging(self):
-        with patch("app.main._setup_remote_logging") as mock_setup:
+        with patch("app.main._setup_remote_logging") as mock_setup, \
+             patch("app.main.service_config") as mock_config:
             import asyncio
             from app.main import startup_event
             asyncio.run(startup_event())
             mock_setup.assert_called_once()
+            mock_config.init.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

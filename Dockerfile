@@ -24,6 +24,6 @@ RUN mkdir -p /app/app/models && \
 
 VOLUME /tmp
 
-ENV TTS_PORT=8009
+ENV TTS_PORT=7707
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT}
 
