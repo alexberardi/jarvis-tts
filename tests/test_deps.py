@@ -29,8 +29,17 @@ class TestVerifyAppAuth:
         """Should raise HTTPException when app credentials are missing."""
         from app.deps import verify_app_auth
 
+        # Pass None explicitly to bypass FastAPI's Header() defaults
+        # (Header() objects are truthy when called outside dependency injection)
         with pytest.raises(HTTPException) as exc_info:
-            await verify_app_auth()
+            await verify_app_auth(
+                x_jarvis_app_id=None,
+                x_jarvis_app_key=None,
+                x_context_household_id=None,
+                x_context_node_id=None,
+                x_context_user_id=None,
+                x_context_household_member_ids=None,
+            )
 
         assert exc_info.value.status_code == 401
         assert "credentials" in exc_info.value.detail.lower()
@@ -49,6 +58,10 @@ class TestVerifyAppAuth:
             await verify_app_auth(
                 x_jarvis_app_id="invalid-app",
                 x_jarvis_app_key="invalid-key",
+                x_context_household_id=None,
+                x_context_node_id=None,
+                x_context_user_id=None,
+                x_context_household_member_ids=None,
             )
 
         assert exc_info.value.status_code == 401
@@ -69,6 +82,10 @@ class TestVerifyAppAuth:
         result = await verify_app_auth(
             x_jarvis_app_id="command-center",
             x_jarvis_app_key="secret-key",
+            x_context_household_id=None,
+            x_context_node_id=None,
+            x_context_user_id=None,
+            x_context_household_member_ids=None,
         )
 
         assert isinstance(result, AppAuthResult)
@@ -92,6 +109,7 @@ class TestVerifyAppAuth:
             x_context_household_id="household-123",
             x_context_node_id="kitchen-pi",
             x_context_user_id=42,
+            x_context_household_member_ids=None,
         )
 
         assert isinstance(result.context, RequestContext)
@@ -113,6 +131,10 @@ class TestVerifyAppAuth:
         result = await verify_app_auth(
             x_jarvis_app_id="command-center",
             x_jarvis_app_key="secret-key",
+            x_context_household_id=None,
+            x_context_node_id=None,
+            x_context_user_id=None,
+            x_context_household_member_ids=None,
         )
 
         assert result.context.household_id is None
@@ -135,6 +157,10 @@ class TestVerifyAppAuth:
             await verify_app_auth(
                 x_jarvis_app_id="command-center",
                 x_jarvis_app_key="secret-key",
+                x_context_household_id=None,
+                x_context_node_id=None,
+                x_context_user_id=None,
+                x_context_household_member_ids=None,
             )
 
         assert exc_info.value.status_code == 401
