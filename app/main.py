@@ -11,8 +11,11 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request, Response
 from piper import PiperVoice
 
+from app import service_config
 from app.deps import verify_app_auth
+from app.services.settings_service import get_settings_service
 from jarvis_auth_client.models import AppAuthResult
+from jarvis_settings_client import create_combined_auth, create_settings_router, create_superuser_auth
 
 try:
     from jarvis_log_client import JarvisLogHandler, init as init_log_client
@@ -65,15 +68,9 @@ def _setup_remote_logging() -> None:
 
 app = FastAPI(title="Jarvis TTS", version="1.0.0")
 
-# Add settings router from shared library
-from jarvis_settings_client import create_settings_router, create_superuser_auth
-from app.services.settings_service import get_settings_service
-
-from app import service_config
-
 _settings_router = create_settings_router(
     service=get_settings_service(),
-    auth_dependency=verify_app_auth,
+    auth_dependency=create_combined_auth(service_config.get_auth_url()),
     write_auth_dependency=create_superuser_auth(service_config.get_auth_url()),
 )
 app.include_router(_settings_router, prefix="/settings", tags=["settings"])
