@@ -87,6 +87,10 @@ class TestSpeakEndpoint:
         assert resp.status_code == 200
         assert resp.json() == {"error": "No text provided"}
 
+    def test_speak_requires_auth(self, unauthenticated_client):
+        resp = unauthenticated_client.post("/speak", json={"text": "Hi"})
+        assert resp.status_code in (401, 422)
+
     def test_speak_multiple_chunks_concatenated(self, client):
         """When the voice yields multiple chunks, all frames appear in the WAV."""
         chunks = [
@@ -240,6 +244,10 @@ class TestGenerateWakeResponse:
             client.post("/generate-wake-response")
 
         assert captured_url == "http://custom-host:9000/api/v2/lightweight/chat"
+
+    def test_wake_response_requires_auth(self, unauthenticated_client):
+        resp = unauthenticated_client.post("/generate-wake-response")
+        assert resp.status_code in (401, 422)
 
 
 # ---------------------------------------------------------------------------

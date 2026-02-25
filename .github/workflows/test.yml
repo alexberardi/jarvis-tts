@@ -35,4 +35,4 @@ jobs:
 
       - name: Check test coverage
         run: |
-          pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=80
+          pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=90
