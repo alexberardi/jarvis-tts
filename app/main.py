@@ -9,6 +9,7 @@ import httpx
 import onnxruntime as ort
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.responses import StreamingResponse
 from piper import PiperVoice
 
 from app import service_config
@@ -94,6 +95,16 @@ def pong():
     return {"message": "pong"}
 
 
+@app.get("/audio/format")
+def audio_format(auth: AppAuthResult = Depends(verify_app_auth)):
+    """Return the current voice's audio format (no synthesis needed)."""
+    return {
+        "sample_rate": voice.config.sample_rate,
+        "channels": 1,
+        "sample_width": 2,
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
@@ -133,6 +144,49 @@ async def speak(request: Request, auth: AppAuthResult = Depends(verify_app_auth)
             wav_file.writeframes(chunk.audio_int16_bytes)
 
     return Response(content=buf.getvalue(), media_type="audio/wav")
+
+@app.post("/speak/stream")
+async def speak_stream(request: Request, auth: AppAuthResult = Depends(verify_app_auth)):
+    """Stream raw PCM audio chunks for low-latency playback.
+
+    Returns raw 16-bit PCM audio (no WAV header) as a streaming response.
+    Audio format metadata is in response headers.
+    """
+    logger.debug(
+        f"TTS stream request from {auth.app.app_id} "
+        f"for household {auth.context.household_id}, node {auth.context.node_id}"
+    )
+    data = await request.json()
+    text = data.get("text", "")
+    if not text:
+        return {"error": "No text provided"}
+
+    # Get the generator from Piper
+    audio_chunks = voice.synthesize(text)
+
+    # Peek at first chunk to read audio properties
+    first_chunk = next(audio_chunks)
+    sample_rate = first_chunk.sample_rate
+    channels = first_chunk.sample_channels
+    sample_width = first_chunk.sample_width
+
+    def pcm_generator():
+        # Yield first chunk
+        yield first_chunk.audio_int16_bytes
+        # Yield remaining chunks
+        for chunk in audio_chunks:
+            yield chunk.audio_int16_bytes
+
+    return StreamingResponse(
+        pcm_generator(),
+        media_type="audio/raw",
+        headers={
+            "X-Audio-Sample-Rate": str(sample_rate),
+            "X-Audio-Channels": str(channels),
+            "X-Audio-Sample-Width": str(sample_width),
+        },
+    )
+
 
 @app.post("/generate-wake-response")
 async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth)):
