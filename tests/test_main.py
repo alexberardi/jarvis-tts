@@ -124,26 +124,46 @@ class TestSpeakEndpoint:
 class TestGenerateWakeResponse:
 
     @staticmethod
-    def _make_stream_lines(text_parts: list[str]) -> list[str]:
-        """Build JSON lines the way the LLM proxy streams them."""
-        return [json.dumps({"response": part}) for part in text_parts]
+    def _openai_response(text: str) -> dict:
+        """Build an OpenAI-compatible chat completion response payload."""
+        return {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "live",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
 
     @pytest.fixture
     def env_vars(self, monkeypatch):
         monkeypatch.setenv("JARVIS_LLM_PROXY_API_URL", "http://llm-proxy:8000")
-        monkeypatch.setenv("JARVIS_LLM_PROXY_API_VERSION", "1")
+        monkeypatch.setenv("JARVIS_APP_ID", "jarvis-tts")
+        monkeypatch.setenv("JARVIS_APP_KEY", "test-key")
 
-    def test_wake_response_returns_text(self, client, env_vars):
-        lines = self._make_stream_lines(["At your ", "service!"])
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.aiter_lines = _async_line_iter(lines)
-
+    @staticmethod
+    def _mock_client_with_response(status: int = 200, payload: dict | None = None) -> AsyncMock:
+        http_response = httpx.Response(
+            status_code=status,
+            content=json.dumps(payload or {}).encode(),
+            request=httpx.Request("POST", "http://llm-proxy:8000/v1/chat/completions"),
+        )
         mock_client = AsyncMock()
-        mock_client.stream = _fake_stream_context(mock_resp)
+        mock_client.post = AsyncMock(return_value=http_response)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
+        return mock_client
 
+    def test_wake_response_returns_text(self, client, env_vars):
+        mock_client = self._mock_client_with_response(
+            payload=self._openai_response("At your service!")
+        )
         with patch("app.main.httpx.AsyncClient", return_value=mock_client):
             resp = client.post("/generate-wake-response")
 
@@ -151,99 +171,82 @@ class TestGenerateWakeResponse:
         assert resp.json() == {"text": "At your service!"}
 
     def test_wake_response_strips_whitespace(self, client, env_vars):
-        lines = self._make_stream_lines(["  Hello!  "])
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.aiter_lines = _async_line_iter(lines)
-
-        mock_client = AsyncMock()
-        mock_client.stream = _fake_stream_context(mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-
+        mock_client = self._mock_client_with_response(
+            payload=self._openai_response("  Hello!  ")
+        )
         with patch("app.main.httpx.AsyncClient", return_value=mock_client):
             resp = client.post("/generate-wake-response")
 
         assert resp.json()["text"] == "Hello!"
 
-    def test_wake_response_fallback_on_empty_response(self, client, env_vars):
-        lines = self._make_stream_lines([""])
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.aiter_lines = _async_line_iter(lines)
-
-        mock_client = AsyncMock()
-        mock_client.stream = _fake_stream_context(mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("app.main.httpx.AsyncClient", return_value=mock_client):
-            resp = client.post("/generate-wake-response")
-
-        assert resp.json() == {"text": "Yes?"}
-
-    def test_wake_response_handles_llm_proxy_error(self, client, env_vars):
-        """HTTP error from LLM proxy propagates as an unhandled exception."""
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock(
-            side_effect=httpx.HTTPStatusError(
-                "Internal Server Error",
-                request=httpx.Request("POST", "http://llm-proxy:8000/api/v1/lightweight/chat"),
-                response=httpx.Response(500),
-            )
+    def test_wake_response_fallback_on_empty_content(self, client, env_vars):
+        """Empty LLM content falls back to 'Yes?' instead of returning blank."""
+        mock_client = self._mock_client_with_response(
+            payload=self._openai_response("")
         )
-
-        mock_client = AsyncMock()
-        mock_client.stream = _fake_stream_context(mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("app.main.httpx.AsyncClient", return_value=mock_client):
-            with pytest.raises(httpx.HTTPStatusError):
-                client.post("/generate-wake-response")
-
-    def test_wake_response_handles_json_decode_errors(self, client, env_vars):
-        """Malformed lines are skipped; if no valid response, falls back."""
-        lines = ["not-json", "{bad", ""]
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.aiter_lines = _async_line_iter(lines)
-
-        mock_client = AsyncMock()
-        mock_client.stream = _fake_stream_context(mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-
         with patch("app.main.httpx.AsyncClient", return_value=mock_client):
             resp = client.post("/generate-wake-response")
 
         assert resp.json() == {"text": "Yes?"}
 
-    def test_wake_response_uses_correct_llm_url(self, client, monkeypatch):
-        monkeypatch.setenv("JARVIS_LLM_PROXY_API_URL", "http://custom-host:9000")
-        monkeypatch.setenv("JARVIS_LLM_PROXY_API_VERSION", "2")
+    def test_wake_response_fallback_on_llm_proxy_error(self, client, env_vars):
+        """HTTP error from LLM proxy falls back to 'Yes?' — never 500s."""
+        mock_client = self._mock_client_with_response(status=500)
+        with patch("app.main.httpx.AsyncClient", return_value=mock_client):
+            resp = client.post("/generate-wake-response")
 
-        lines = self._make_stream_lines(["Hi"])
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.aiter_lines = _async_line_iter(lines)
+        assert resp.status_code == 200
+        assert resp.json() == {"text": "Yes?"}
 
-        captured_url = None
-
-        def _capture_stream(method, url, **kwargs):
-            nonlocal captured_url
-            captured_url = url
-            return _fake_stream_context(mock_resp)(method, url, **kwargs)
-
+    def test_wake_response_fallback_on_network_error(self, client, env_vars):
+        """Network error falls back to 'Yes?' without raising."""
         mock_client = AsyncMock()
-        mock_client.stream = _capture_stream
+        mock_client.post = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
+        with patch("app.main.httpx.AsyncClient", return_value=mock_client):
+            resp = client.post("/generate-wake-response")
 
+        assert resp.status_code == 200
+        assert resp.json() == {"text": "Yes?"}
+
+    def test_wake_response_fallback_on_malformed_response(self, client, env_vars):
+        """Response without choices falls back to 'Yes?'."""
+        mock_client = self._mock_client_with_response(payload={"choices": []})
+        with patch("app.main.httpx.AsyncClient", return_value=mock_client):
+            resp = client.post("/generate-wake-response")
+
+        assert resp.json() == {"text": "Yes?"}
+
+    def test_wake_response_sends_auth_headers(self, client, env_vars):
+        """App auth headers reach the LLM proxy."""
+        mock_client = self._mock_client_with_response(
+            payload=self._openai_response("Hi")
+        )
         with patch("app.main.httpx.AsyncClient", return_value=mock_client):
             client.post("/generate-wake-response")
 
-        assert captured_url == "http://custom-host:9000/api/v2/lightweight/chat"
+        call_kwargs = mock_client.post.await_args.kwargs
+        assert call_kwargs["headers"]["X-Jarvis-App-Id"] == "jarvis-tts"
+        assert call_kwargs["headers"]["X-Jarvis-App-Key"] == "test-key"
+
+    def test_wake_response_uses_correct_llm_url(self, client, monkeypatch):
+        monkeypatch.setenv("JARVIS_LLM_PROXY_API_URL", "http://custom-host:9000")
+        monkeypatch.setenv("JARVIS_APP_ID", "jarvis-tts")
+        monkeypatch.setenv("JARVIS_APP_KEY", "k")
+
+        mock_client = self._mock_client_with_response(
+            payload=self._openai_response("Hi")
+        )
+        with patch("app.main.httpx.AsyncClient", return_value=mock_client):
+            client.post("/generate-wake-response")
+
+        assert (
+            mock_client.post.await_args.args[0]
+            == "http://custom-host:9000/v1/chat/completions"
+        )
 
     def test_wake_response_requires_auth(self, unauthenticated_client):
         resp = unauthenticated_client.post("/generate-wake-response")
