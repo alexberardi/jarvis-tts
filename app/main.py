@@ -188,16 +188,27 @@ async def speak_stream(request: Request, auth: AppAuthResult = Depends(verify_ap
     )
 
 
+_WAKE_RESPONSE_FALLBACK = "Yes?"
+
+
 @app.post("/generate-wake-response")
 async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth)):
     logger.debug(
         f"Wake response request from {auth.app.app_id} "
         f"for household {auth.context.household_id}, node {auth.context.node_id}"
     )
-    llm_proxy_version = os.getenv("JARVIS_LLM_PROXY_API_VERSION", "1")
-    llm_proxy_url = f"{service_config.get_llm_proxy_url()}/api/v{llm_proxy_version}/lightweight/chat"
-    logger.debug(f"Calling LLM proxy at {llm_proxy_url}")
-    
+
+    # OpenAI-compatible chat endpoint on jarvis-llm-proxy-api. Requires
+    # X-Jarvis-App-Id + X-Jarvis-App-Key (same creds we already use for
+    # remote logging). The legacy /lightweight/chat path this handler
+    # previously called no longer exists and was returning 404/500 up the
+    # stack — that broke the node's wake-response cache and forced every
+    # wake to hit the TTS proxy synchronously. Fallback to a static "Yes?"
+    # if the call fails so the node always gets something usable.
+    llm_proxy_url = f"{service_config.get_llm_proxy_url().rstrip('/')}/v1/chat/completions"
+    app_id = os.getenv("JARVIS_APP_ID", "jarvis-tts")
+    app_key = os.getenv("JARVIS_APP_KEY", "")
+
     system_prompt = (
         "You are Jarvis, a voice assistant butler. The user has just called you for help. "
         "Please keep the greeting gender neutral. Please keep the greeting to one or two short sentences, but make it charming."
@@ -205,27 +216,39 @@ async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth))
         "Generate a short greeting like 'At your service', 'How may I help you?', etc."
     )
 
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "X-Jarvis-App-Id": app_id,
+        "X-Jarvis-App-Key": app_key,
+    }
     body = {
+        "model": "live",
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Hello Jarvis"}
+            {"role": "user", "content": "Hello Jarvis"},
         ],
-        "stream": True
+        "stream": False,
     }
 
-    async with httpx.AsyncClient() as client:
-        async with client.stream("POST", llm_proxy_url, headers=headers, json=body, timeout=20.0) as response:
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(llm_proxy_url, headers=headers, json=body)
             response.raise_for_status()
-            full_text = ""
-            async for line in response.aiter_lines():
-                if not line.strip():
-                    continue
-                try:
-                    chunk = httpx.Response(200, content=line).json()
-                    full_text += chunk.get("response", "")
-                except json.JSONDecodeError as e:
-                    logger.debug(f"Failed to parse LLM response chunk: {e}")
-                    continue
+            data = response.json()
+            choices = data.get("choices") or []
+            if choices:
+                content = (choices[0].get("message") or {}).get("content", "") or ""
+                text = content.strip()
+                if text:
+                    return {"text": text}
+            logger.warning("LLM proxy returned no wake-response text; using fallback")
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "LLM proxy returned %s for wake-response: %s",
+            e.response.status_code,
+            e.response.text[:200],
+        )
+    except (httpx.RequestError, json.JSONDecodeError, KeyError, IndexError) as e:
+        logger.error("Wake-response generation failed: %s", e)
 
-    return {"text": full_text.strip() or "Yes?"}
+    return {"text": _WAKE_RESPONSE_FALLBACK}
