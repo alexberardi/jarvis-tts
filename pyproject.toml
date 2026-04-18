@@ -33,6 +33,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "pytest-httpx>=0.21.0",
+    "numpy",
 ]
 
 [tool.setuptools.packages.find]
