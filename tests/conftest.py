@@ -56,6 +56,20 @@ class FakePiperVoice:
 # Module-level mocks injected before app.main import
 # ---------------------------------------------------------------------------
 
+class FakeKPipeline:
+    """Mimics kokoro.KPipeline: callable that yields per-segment audio tuples."""
+
+    def __init__(self, lang_code: str = "a", **kwargs):
+        self.lang_code = lang_code
+        self.init_kwargs = kwargs
+
+    def __call__(self, text: str, voice: str = "af_heart", speed: float = 1.0):
+        import numpy as np
+        # Yield two segments of float32 silence to mimic streaming segmentation
+        for _ in range(2):
+            yield ("graphemes", "phonemes", np.zeros(1024, dtype=np.float32))
+
+
 def _install_mock_modules() -> None:
     piper_mod = types.ModuleType("piper")
     piper_mod.PiperVoice = FakePiperVoice  # type: ignore[attr-defined]
@@ -68,6 +82,12 @@ def _install_mock_modules() -> None:
     ort_mod = types.ModuleType("onnxruntime")
     ort_mod.set_default_logger_severity = lambda *a, **kw: None  # type: ignore[attr-defined]
     sys.modules["onnxruntime"] = ort_mod
+
+    # Kokoro mock — installed so registry can register KokoroTTSProvider during
+    # tests without requiring the real kokoro/torch install.
+    kokoro_mod = types.ModuleType("kokoro")
+    kokoro_mod.KPipeline = FakeKPipeline  # type: ignore[attr-defined]
+    sys.modules["kokoro"] = kokoro_mod
 
     if "jarvis_log_client" not in sys.modules:
         log_mod = types.ModuleType("jarvis_log_client")
