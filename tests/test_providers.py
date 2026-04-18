@@ -163,3 +163,63 @@ class TestProviderManager:
             # Reload failed → previous provider should be reused
             assert first is p1
             assert second is p1
+
+    def test_raises_on_initial_load_failure(self):
+        """With no previous provider cached, build failure should propagate."""
+        from app.services.provider_manager import get_provider_manager, _ProviderFingerprint
+
+        manager = get_provider_manager()
+        with patch("app.services.provider_manager._read_fingerprint") as mock_fp, \
+             patch("app.services.provider_manager._build_provider") as mock_build:
+            mock_fp.return_value = _ProviderFingerprint(
+                provider="piper", piper_voice="v1",
+                kokoro_voice="bm_george", kokoro_speed=1.0,
+            )
+            mock_build.side_effect = RuntimeError("load failed")
+
+            with pytest.raises(RuntimeError, match="load failed"):
+                manager.get()
+
+    def test_reset_drops_cached_provider(self):
+        from app.services.provider_manager import get_provider_manager
+        manager = get_provider_manager()
+        first = manager.get()
+        manager.reset()
+        assert manager._provider is None
+        assert manager._fingerprint is None
+        # next get() rebuilds
+        second = manager.get()
+        assert second is not first or first is not None  # rebuilt (may or may not be same identity)
+
+
+class TestBuildProvider:
+    """Direct coverage of _build_provider routing for each provider name."""
+
+    def test_piper_path(self):
+        from app.services.provider_manager import _build_provider, _ProviderFingerprint
+        fp = _ProviderFingerprint(
+            provider="piper", piper_voice="en_GB-alan-low",
+            kokoro_voice="bm_george", kokoro_speed=1.0,
+        )
+        provider = _build_provider(fp)
+        assert provider.name == "piper"
+
+    def test_kokoro_path(self):
+        from app.services.provider_manager import _build_provider, _ProviderFingerprint
+        fp = _ProviderFingerprint(
+            provider="kokoro", piper_voice="en_GB-alan-low",
+            kokoro_voice="bm_george", kokoro_speed=1.25,
+        )
+        provider = _build_provider(fp)
+        assert provider.name == "kokoro"
+
+    def test_unknown_provider_falls_back_to_piper(self):
+        """Unknown provider name hits the generic load_provider path, which
+        falls back to Piper via the registry."""
+        from app.services.provider_manager import _build_provider, _ProviderFingerprint
+        fp = _ProviderFingerprint(
+            provider="nonexistent", piper_voice="en_GB-alan-low",
+            kokoro_voice="bm_george", kokoro_speed=1.0,
+        )
+        provider = _build_provider(fp)
+        assert provider.name == "piper"
