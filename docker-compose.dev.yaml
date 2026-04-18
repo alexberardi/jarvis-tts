@@ -12,14 +12,23 @@ services:
       - ../jarvis-config-client:/app/jarvis-config-client
       - ../jarvis-auth-client:/app/jarvis-auth-client
       - ../jarvis-settings-client:/app/jarvis-settings-client
+      - jarvis-tts-hf-cache:/app/models/hf_cache
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - HF_HOME=/app/models/hf_cache
     extra_hosts:
       - "${DOCKER_HOST_ALIAS:-host.docker.internal}:host-gateway"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     command: >
-      sh -c "pip install -q -e /app/jarvis-log-client -e /app/jarvis-config-client -e /app/jarvis-auth-client -e /app/jarvis-settings-client &&
+      sh -c "pip install -q -e /app/jarvis-log-client &&
+             pip install -q -e /app/jarvis-config-client &&
+             pip install -q -e /app/jarvis-auth-client &&
+             pip install -q -e /app/jarvis-settings-client &&
              uvicorn app.main:app --host 0.0.0.0 --port ${TTS_PORT:-7707} --reload"
 
   postgres:
@@ -40,3 +49,4 @@ services:
 
 volumes:
   tts-pg-data:
+  jarvis-tts-hf-cache:

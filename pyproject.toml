@@ -23,6 +23,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+kokoro = [
+    "kokoro>=0.8",
+    "soundfile",
+    "numpy",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

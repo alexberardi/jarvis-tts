@@ -1,16 +1,17 @@
-"""Tests for app/main.py – endpoints and startup logic.
+"""Tests for app/main.py — endpoints and startup logic.
 
 Covers:
 - GET /ping
 - GET /health
+- GET /audio/format
 - POST /speak
+- POST /speak/stream
 - POST /generate-wake-response
 - _setup_remote_logging()
 - startup event
 """
 
 import json
-import struct
 import wave
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,7 +22,7 @@ import pytest
 # conftest.py installs mock modules before this import
 from app.main import app, _setup_remote_logging
 
-from tests.conftest import FakeAudioChunk, FakePiperVoice
+from tests.conftest import FakeTTSProvider
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,22 @@ class TestHealthEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# GET /audio/format
+# ---------------------------------------------------------------------------
+
+class TestAudioFormatEndpoint:
+
+    def test_audio_format_returns_provider_format(self, client, fake_provider):
+        resp = client.get("/audio/format")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["sample_rate"] == 22050
+        assert body["channels"] == 1
+        assert body["sample_width"] == 2
+        assert body["provider"] == "fake"
+
+
+# ---------------------------------------------------------------------------
 # POST /speak
 # ---------------------------------------------------------------------------
 
@@ -91,30 +108,50 @@ class TestSpeakEndpoint:
         resp = unauthenticated_client.post("/speak", json={"text": "Hi"})
         assert resp.status_code in (401, 422)
 
-    def test_speak_multiple_chunks_concatenated(self, client):
-        """When the voice yields multiple chunks, all frames appear in the WAV."""
-        chunks = [
-            FakeAudioChunk(num_frames=100),
-            FakeAudioChunk(num_frames=200),
-            FakeAudioChunk(num_frames=300),
-        ]
+    def test_speak_multiple_chunks_concatenated(self):
+        """When the provider yields multiple chunks, all frames appear in the WAV."""
+        from app.main import app, verify_app_auth
+        from app.services.provider_manager import get_active_provider
+        from tests.conftest import _make_auth_result
+        from fastapi.testclient import TestClient
 
-        class MultiChunkVoice(FakePiperVoice):
-            def synthesize(self, text: str):
-                yield from chunks
-
-        import app.main as main_mod
-        original_voice = main_mod.voice
-        main_mod.voice = MultiChunkVoice()
+        multi_provider = FakeTTSProvider(num_chunks=3, frames_per_chunk=100)
+        app.dependency_overrides[verify_app_auth] = lambda: _make_auth_result()
+        app.dependency_overrides[get_active_provider] = lambda: multi_provider
         try:
-            resp = client.post("/speak", json={"text": "multi"})
+            with TestClient(app) as tc:
+                resp = tc.post("/speak", json={"text": "multi"})
         finally:
-            main_mod.voice = original_voice
+            app.dependency_overrides.clear()
 
         assert resp.status_code == 200
         buf = BytesIO(resp.content)
         with wave.open(buf, "rb") as wf:
-            assert wf.getnframes() == 600  # 100 + 200 + 300
+            assert wf.getnframes() == 300
+
+
+# ---------------------------------------------------------------------------
+# POST /speak/stream
+# ---------------------------------------------------------------------------
+
+class TestSpeakStreamEndpoint:
+
+    def test_stream_returns_raw_pcm(self, client):
+        resp = client.post("/speak/stream", json={"text": "Hello"})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/raw"
+
+    def test_stream_sets_audio_headers(self, client):
+        resp = client.post("/speak/stream", json={"text": "Hello"})
+        assert resp.headers["x-audio-sample-rate"] == "22050"
+        assert resp.headers["x-audio-channels"] == "1"
+        assert resp.headers["x-audio-sample-width"] == "2"
+        assert resp.headers["x-audio-provider"] == "fake"
+
+    def test_stream_empty_text_returns_error(self, client):
+        resp = client.post("/speak/stream", json={"text": ""})
+        assert resp.status_code == 200
+        assert resp.json() == {"error": "No text provided"}
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +162,6 @@ class TestGenerateWakeResponse:
 
     @staticmethod
     def _openai_response(text: str) -> dict:
-        """Build an OpenAI-compatible chat completion response payload."""
         return {
             "id": "chatcmpl-test",
             "object": "chat.completion",
@@ -180,7 +216,6 @@ class TestGenerateWakeResponse:
         assert resp.json()["text"] == "Hello!"
 
     def test_wake_response_fallback_on_empty_content(self, client, env_vars):
-        """Empty LLM content falls back to 'Yes?' instead of returning blank."""
         mock_client = self._mock_client_with_response(
             payload=self._openai_response("")
         )
@@ -190,7 +225,6 @@ class TestGenerateWakeResponse:
         assert resp.json() == {"text": "Yes?"}
 
     def test_wake_response_fallback_on_llm_proxy_error(self, client, env_vars):
-        """HTTP error from LLM proxy falls back to 'Yes?' — never 500s."""
         mock_client = self._mock_client_with_response(status=500)
         with patch("app.main.httpx.AsyncClient", return_value=mock_client):
             resp = client.post("/generate-wake-response")
@@ -199,7 +233,6 @@ class TestGenerateWakeResponse:
         assert resp.json() == {"text": "Yes?"}
 
     def test_wake_response_fallback_on_network_error(self, client, env_vars):
-        """Network error falls back to 'Yes?' without raising."""
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(
             side_effect=httpx.ConnectError("connection refused")
@@ -213,7 +246,6 @@ class TestGenerateWakeResponse:
         assert resp.json() == {"text": "Yes?"}
 
     def test_wake_response_fallback_on_malformed_response(self, client, env_vars):
-        """Response without choices falls back to 'Yes?'."""
         mock_client = self._mock_client_with_response(payload={"choices": []})
         with patch("app.main.httpx.AsyncClient", return_value=mock_client):
             resp = client.post("/generate-wake-response")
@@ -221,7 +253,6 @@ class TestGenerateWakeResponse:
         assert resp.json() == {"text": "Yes?"}
 
     def test_wake_response_sends_auth_headers(self, client, env_vars):
-        """App auth headers reach the LLM proxy."""
         mock_client = self._mock_client_with_response(
             payload=self._openai_response("Hi")
         )
@@ -262,13 +293,11 @@ class TestSetupRemoteLogging:
     def test_disabled_when_no_log_client(self):
         with patch("app.main._jarvis_log_available", False):
             _setup_remote_logging()
-            # Should return early; no error
 
     def test_disabled_when_no_app_key(self):
         with patch("app.main._jarvis_log_available", True), \
              patch.dict("os.environ", {"JARVIS_APP_KEY": ""}, clear=False):
             _setup_remote_logging()
-            # Should return early; no error
 
     def test_enabled_with_valid_config(self):
         mock_init = MagicMock()
@@ -295,41 +324,11 @@ class TestStartupEvent:
 
     def test_startup_calls_setup_remote_logging(self):
         with patch("app.main._setup_remote_logging") as mock_setup, \
-             patch("app.main.service_config") as mock_config:
+             patch("app.main.service_config") as mock_config, \
+             patch("app.main.get_active_provider") as mock_provider:
             import asyncio
             from app.main import startup_event
+            mock_provider.return_value = MagicMock(name="stub-provider")
             asyncio.run(startup_event())
             mock_setup.assert_called_once()
             mock_config.init.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _async_line_iter(lines: list[str]):
-    """Return a callable that produces an async iterator over *lines*."""
-    async def _iter():
-        for line in lines:
-            yield line
-    return _iter
-
-
-class _FakeStreamCtx:
-    """Async context manager wrapping a mock response object."""
-
-    def __init__(self, resp):
-        self._resp = resp
-
-    async def __aenter__(self):
-        return self._resp
-
-    async def __aexit__(self, *exc):
-        return None
-
-
-def _fake_stream_context(mock_resp):
-    """Return a callable that mimics ``httpx.AsyncClient.stream(...)``."""
-    def _stream(*args, **kwargs):
-        return _FakeStreamCtx(mock_resp)
-    return _stream

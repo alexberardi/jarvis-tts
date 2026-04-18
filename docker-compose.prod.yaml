@@ -9,6 +9,9 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - HF_HOME=/app/models/hf_cache
+    volumes:
+      - jarvis-tts-hf-cache:/app/models/hf_cache
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${TTS_PORT:-7707}/ping"]
@@ -16,3 +19,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+volumes:
+  jarvis-tts-hf-cache:

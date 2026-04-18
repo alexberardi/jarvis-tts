@@ -3,17 +3,17 @@ import logging
 import os
 import wave
 from io import BytesIO
-from pathlib import Path
 
 import httpx
 import onnxruntime as ort
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
-from piper import PiperVoice
 
 from app import service_config
 from app.deps import verify_app_auth
+from app.providers.base import TTSProvider
+from app.services.provider_manager import get_active_provider
 from app.services.settings_service import get_settings_service
 from jarvis_auth_client.models import AppAuthResult
 from jarvis_settings_client import create_combined_auth, create_settings_router, create_superuser_auth
@@ -27,7 +27,6 @@ except ImportError:
 ort.set_default_logger_severity(3)  # 3=ERROR, suppresses warnings
 load_dotenv()
 
-# Set up logging
 console_level = os.getenv("JARVIS_LOG_CONSOLE_LEVEL", "INFO")
 logging.basicConfig(
     level=getattr(logging, console_level.upper(), logging.INFO),
@@ -35,7 +34,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("uvicorn")
 
-# Remote logging handler (initialized in startup event)
 _jarvis_handler = None
 
 
@@ -82,13 +80,16 @@ async def startup_event():
     """Initialize services on app startup."""
     service_config.init()
     _setup_remote_logging()
+    # Warm up the default provider so the first /speak request doesn't pay
+    # the model-load cost. If it fails we still start — the manager will
+    # fall back to Piper on the first real request.
+    try:
+        provider = get_active_provider()
+        logger.info(f"TTS ready with provider '{provider.name}'")
+    except Exception as e:
+        logger.warning(f"Failed to pre-load TTS provider at startup: {e}")
     logger.info("Jarvis TTS service started")
 
-VOICE_DIR = Path("app/models")
-MODEL_PATH = VOICE_DIR / "en_GB-alan-low.onnx"
-CONFIG_PATH = VOICE_DIR / "en_GB-alan-low.onnx.json"
-
-voice = PiperVoice.load(model_path=MODEL_PATH, config_path=CONFIG_PATH)
 
 @app.get("/ping")
 def pong():
@@ -96,12 +97,17 @@ def pong():
 
 
 @app.get("/audio/format")
-def audio_format(auth: AppAuthResult = Depends(verify_app_auth)):
-    """Return the current voice's audio format (no synthesis needed)."""
+def audio_format(
+    auth: AppAuthResult = Depends(verify_app_auth),
+    provider: TTSProvider = Depends(get_active_provider),
+):
+    """Return the current provider's audio format (no synthesis needed)."""
+    fmt = provider.get_audio_format()
     return {
-        "sample_rate": voice.config.sample_rate,
-        "channels": 1,
-        "sample_width": 2,
+        "sample_rate": fmt.sample_rate,
+        "channels": fmt.channels,
+        "sample_width": fmt.sample_width,
+        "provider": provider.name,
     }
 
 
@@ -109,81 +115,70 @@ def audio_format(auth: AppAuthResult = Depends(verify_app_auth)):
 def health():
     return {"status": "healthy"}
 
+
 @app.post("/speak")
-async def speak(request: Request, auth: AppAuthResult = Depends(verify_app_auth)):
+async def speak(
+    request: Request,
+    auth: AppAuthResult = Depends(verify_app_auth),
+    provider: TTSProvider = Depends(get_active_provider),
+):
     logger.debug(
         f"TTS request from {auth.app.app_id} "
-        f"for household {auth.context.household_id}, node {auth.context.node_id}"
+        f"for household {auth.context.household_id}, node {auth.context.node_id} "
+        f"(provider={provider.name})"
     )
     data = await request.json()
     text = data.get("text", "")
     if not text:
         return {"error": "No text provided"}
 
-    # Get the generator from Piper
-    audio_chunks = voice.synthesize(text)
-
-    # Grab first chunk to read audio properties
-    first_chunk = next(audio_chunks)
-    sample_rate = first_chunk.sample_rate
-    channels = first_chunk.sample_channels
-    sample_width = first_chunk.sample_width  # in bytes (should be 2 for 16-bit PCM)
-
-    # Prepare in-memory WAV buffer
+    fmt = provider.get_audio_format()
     buf = BytesIO()
-    with wave.open(buf, 'wb') as wav_file:
-        wav_file.setnchannels(channels)
-        wav_file.setsampwidth(sample_width)
-        wav_file.setframerate(sample_rate)
-
-        # Write first chunk
-        wav_file.writeframes(first_chunk.audio_int16_bytes)
-
-        # Write remaining chunks
-        for chunk in audio_chunks:
-            wav_file.writeframes(chunk.audio_int16_bytes)
+    with wave.open(buf, "wb") as wav_file:
+        wav_file.setnchannels(fmt.channels)
+        wav_file.setsampwidth(fmt.sample_width)
+        wav_file.setframerate(fmt.sample_rate)
+        for chunk in provider.synthesize(text):
+            wav_file.writeframes(chunk.audio_bytes)
 
     return Response(content=buf.getvalue(), media_type="audio/wav")
 
+
 @app.post("/speak/stream")
-async def speak_stream(request: Request, auth: AppAuthResult = Depends(verify_app_auth)):
+async def speak_stream(
+    request: Request,
+    auth: AppAuthResult = Depends(verify_app_auth),
+    provider: TTSProvider = Depends(get_active_provider),
+):
     """Stream raw PCM audio chunks for low-latency playback.
 
-    Returns raw 16-bit PCM audio (no WAV header) as a streaming response.
-    Audio format metadata is in response headers.
+    Returns raw 16-bit PCM (no WAV header). Audio format metadata is in
+    response headers so the client can initialize its playback pipeline.
     """
     logger.debug(
         f"TTS stream request from {auth.app.app_id} "
-        f"for household {auth.context.household_id}, node {auth.context.node_id}"
+        f"for household {auth.context.household_id}, node {auth.context.node_id} "
+        f"(provider={provider.name})"
     )
     data = await request.json()
     text = data.get("text", "")
     if not text:
         return {"error": "No text provided"}
 
-    # Get the generator from Piper
-    audio_chunks = voice.synthesize(text)
-
-    # Peek at first chunk to read audio properties
-    first_chunk = next(audio_chunks)
-    sample_rate = first_chunk.sample_rate
-    channels = first_chunk.sample_channels
-    sample_width = first_chunk.sample_width
+    fmt = provider.get_audio_format()
 
     def pcm_generator():
-        # Yield first chunk
-        yield first_chunk.audio_int16_bytes
-        # Yield remaining chunks
-        for chunk in audio_chunks:
-            yield chunk.audio_int16_bytes
+        for chunk in provider.synthesize(text):
+            yield chunk.audio_bytes
 
     return StreamingResponse(
         pcm_generator(),
         media_type="audio/raw",
         headers={
-            "X-Audio-Sample-Rate": str(sample_rate),
-            "X-Audio-Channels": str(channels),
-            "X-Audio-Sample-Width": str(sample_width),
+            "X-Audio-Sample-Rate": str(fmt.sample_rate),
+            "X-Audio-Channels": str(fmt.channels),
+            "X-Audio-Sample-Width": str(fmt.sample_width),
+            "X-Audio-Provider": provider.name,
         },
     )
 
@@ -200,11 +195,8 @@ async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth))
 
     # OpenAI-compatible chat endpoint on jarvis-llm-proxy-api. Requires
     # X-Jarvis-App-Id + X-Jarvis-App-Key (same creds we already use for
-    # remote logging). The legacy /lightweight/chat path this handler
-    # previously called no longer exists and was returning 404/500 up the
-    # stack — that broke the node's wake-response cache and forced every
-    # wake to hit the TTS proxy synchronously. Fallback to a static "Yes?"
-    # if the call fails so the node always gets something usable.
+    # remote logging). Fallback to a static "Yes?" if the call fails so
+    # the node always gets something usable.
     llm_proxy_url = f"{service_config.get_llm_proxy_url().rstrip('/')}/v1/chat/completions"
     app_id = os.getenv("JARVIS_APP_ID", "jarvis-tts")
     app_key = os.getenv("JARVIS_APP_KEY", "")
