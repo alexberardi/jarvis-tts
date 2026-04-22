@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import wave
 from io import BytesIO
 
@@ -185,6 +186,11 @@ async def speak_stream(
 
 _WAKE_RESPONSE_FALLBACK = "Yes?"
 
+# Strip Qwen3-style <think>...</think> blocks from LLM responses that leak
+# through when the /no_think control token is ignored. Cheap enough to run
+# on every response; no-op for models that don't emit these.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
 
 @app.post("/generate-wake-response")
 async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth)):
@@ -217,7 +223,9 @@ async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth))
         "model": "live",
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Hello Jarvis"},
+            # /no_think disables Qwen3 thinking mode (ignored by models that
+            # don't recognize it, so this is safe across providers).
+            {"role": "user", "content": "Hello Jarvis\n/no_think"},
         ],
         "stream": False,
     }
@@ -230,6 +238,10 @@ async def generate_wake_response(auth: AppAuthResult = Depends(verify_app_auth))
             choices = data.get("choices") or []
             if choices:
                 content = (choices[0].get("message") or {}).get("content", "") or ""
+                # Defense-in-depth: strip Qwen3 <think>...</think> blocks in
+                # case /no_think was ignored. Adds ~500 tokens of wasted
+                # decode per response when these leak through.
+                content = _THINK_BLOCK_RE.sub("", content)
                 text = content.strip()
                 if text:
                     return {"text": text}
