@@ -223,3 +223,23 @@ class TestBuildProvider:
         )
         provider = _build_provider(fp)
         assert provider.name == "piper"
+
+    def test_kokoro_device_flows_to_provider(self):
+        """Changing kokoro_device in the fingerprint reaches the Kokoro
+        provider constructor. Avoids loading the real KPipeline by patching
+        the registry."""
+        from unittest.mock import patch, MagicMock
+        from app.services.provider_manager import _build_provider, _ProviderFingerprint
+
+        fake_provider = MagicMock()
+        fake_provider.name = "kokoro"
+        with patch("app.services.provider_manager.load_provider", return_value=fake_provider) as mock_load:
+            fp = _ProviderFingerprint(
+                provider="kokoro", piper_voice="en_GB-alan-low",
+                kokoro_voice="bm_george", kokoro_speed=1.0,
+                kokoro_device="cuda",
+            )
+            _build_provider(fp)
+            mock_load.assert_called_once_with(
+                "kokoro", voice="bm_george", speed=1.0, device="cuda",
+            )

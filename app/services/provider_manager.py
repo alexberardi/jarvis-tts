@@ -25,7 +25,9 @@ class _ProviderFingerprint:
     piper_voice: str
     kokoro_voice: str
     kokoro_speed: float
-    kokoro_device: str
+    # Default "cpu" so older callers (tests / external tooling) that
+    # predate this field still construct a valid fingerprint.
+    kokoro_device: str = "cpu"
 
 
 def _read_fingerprint() -> _ProviderFingerprint:
