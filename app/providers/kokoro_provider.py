@@ -10,6 +10,7 @@ can be format-agnostic between providers.
 """
 
 import logging
+import time
 from typing import Generator
 
 import numpy as np
@@ -48,14 +49,18 @@ def _float_to_int16_bytes(samples: np.ndarray) -> bytes:
 
 class KokoroTTSProvider(TTSProvider):
 
-    def __init__(self, voice: str = "bm_george", speed: float = 1.0):
+    def __init__(self, voice: str = "bm_george", speed: float = 1.0, device: str = "cpu"):
         self._voice = voice
         self._speed = float(speed)
+        self._device = device
         lang_code = _lang_code_for_voice(voice)
         logger.info(
-            f"Loading Kokoro pipeline (lang_code='{lang_code}', voice='{voice}', speed={speed})"
+            f"Loading Kokoro pipeline (lang_code='{lang_code}', voice='{voice}', "
+            f"speed={speed}, device='{device}')"
         )
-        self._pipeline = KPipeline(lang_code=lang_code)
+        # device='cpu' is KPipeline's default; pass through unconditionally
+        # so future values ('cuda', 'mps') work without branching here.
+        self._pipeline = KPipeline(lang_code=lang_code, device=device)
 
     @property
     def name(self) -> str:
@@ -65,12 +70,31 @@ class KokoroTTSProvider(TTSProvider):
         return _AUDIO_FORMAT
 
     def synthesize(self, text: str) -> Generator[AudioChunk, None, None]:
-        generator = self._pipeline(text, voice=self._voice, speed=self._speed)
-        for _graphemes, _phonemes, audio in generator:
-            if audio is None:
-                continue
-            samples = audio.detach().cpu().numpy() if hasattr(audio, "detach") else np.asarray(audio)
-            pcm_bytes = _float_to_int16_bytes(samples)
-            if not pcm_bytes:
-                continue
-            yield AudioChunk(audio_bytes=pcm_bytes, format=_AUDIO_FORMAT)
+        # Profile the pipeline so we can see where time is spent. Time to
+        # first chunk covers phoneme prep + first inference pass — if that's
+        # the bulk of the total, inference (GPU-addressable) is the bottleneck.
+        # Large first-chunk / short total-minus-first suggests the prep is slow.
+        t0 = time.monotonic()
+        first_chunk_at: float | None = None
+        chunk_count: int = 0
+        try:
+            generator = self._pipeline(text, voice=self._voice, speed=self._speed)
+            for _graphemes, _phonemes, audio in generator:
+                if audio is None:
+                    continue
+                if first_chunk_at is None:
+                    first_chunk_at = time.monotonic() - t0
+                samples = audio.detach().cpu().numpy() if hasattr(audio, "detach") else np.asarray(audio)
+                pcm_bytes = _float_to_int16_bytes(samples)
+                if not pcm_bytes:
+                    continue
+                chunk_count += 1
+                yield AudioChunk(audio_bytes=pcm_bytes, format=_AUDIO_FORMAT)
+        finally:
+            total = time.monotonic() - t0
+            logger.info(
+                "Kokoro synthesize done: chars=%d chunks=%d first_chunk=%.2fs total=%.2fs device=%s",
+                len(text), chunk_count,
+                first_chunk_at if first_chunk_at is not None else -1.0,
+                total, self._device,
+            )
