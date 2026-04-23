@@ -50,6 +50,15 @@ SETTINGS_DEFINITIONS: list[SettingDefinition] = [
         env_fallback="TTS_KOKORO_SPEED",
     ),
     SettingDefinition(
+        key="tts.kokoro_device",
+        category="tts",
+        value_type="string",
+        default="cpu",
+        description="PyTorch device for Kokoro inference (cpu, cuda, mps)",
+        env_fallback="TTS_KOKORO_DEVICE",
+        options=["cpu", "cuda", "mps"],
+    ),
+    SettingDefinition(
         key="tts.wake_system_prompt",
         category="tts",
         value_type="string",

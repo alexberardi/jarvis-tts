@@ -25,6 +25,7 @@ class _ProviderFingerprint:
     piper_voice: str
     kokoro_voice: str
     kokoro_speed: float
+    kokoro_device: str
 
 
 def _read_fingerprint() -> _ProviderFingerprint:
@@ -34,6 +35,7 @@ def _read_fingerprint() -> _ProviderFingerprint:
         piper_voice=settings.get_str("tts.default_voice", "en_GB-alan-low"),
         kokoro_voice=settings.get_str("tts.kokoro_voice", "bm_george"),
         kokoro_speed=settings.get_float("tts.kokoro_speed", 1.25),
+        kokoro_device=settings.get_str("tts.kokoro_device", "cpu"),
     )
 
 
@@ -45,6 +47,7 @@ def _build_provider(fp: _ProviderFingerprint) -> TTSProvider:
             "kokoro",
             voice=fp.kokoro_voice,
             speed=fp.kokoro_speed,
+            device=fp.kokoro_device,
         )
     return load_provider(fp.provider)
 
@@ -65,7 +68,7 @@ class ProviderManager:
             logger.info(
                 f"Loading TTS provider: {fp.provider} "
                 f"(piper_voice={fp.piper_voice}, kokoro_voice={fp.kokoro_voice}, "
-                f"kokoro_speed={fp.kokoro_speed})"
+                f"kokoro_speed={fp.kokoro_speed}, kokoro_device={fp.kokoro_device})"
             )
             try:
                 new_provider = _build_provider(fp)
