@@ -237,9 +237,9 @@ class TestBuildProvider:
             fp = _ProviderFingerprint(
                 provider="kokoro", piper_voice="en_GB-alan-low",
                 kokoro_voice="bm_george", kokoro_speed=1.0,
-                kokoro_device="cuda",
+                kokoro_device="cuda", kokoro_gain=2.0,
             )
             _build_provider(fp)
             mock_load.assert_called_once_with(
-                "kokoro", voice="bm_george", speed=1.0, device="cuda",
+                "kokoro", voice="bm_george", speed=1.0, device="cuda", gain=2.0,
             )
