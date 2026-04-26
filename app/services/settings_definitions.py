@@ -59,6 +59,19 @@ SETTINGS_DEFINITIONS: list[SettingDefinition] = [
         options=["cpu", "cuda", "mps"],
     ),
     SettingDefinition(
+        key="tts.kokoro_gain",
+        category="tts",
+        value_type="float",
+        default=2.0,
+        description=(
+            "Output amplitude multiplier for Kokoro. Compensates for its quiet "
+            "output (~0.3-0.5 peak) vs Piper (~0.7-0.9). 1.0 = unchanged, "
+            "2.0 ≈ +6 dB (default — peaks ~0.7, no clipping), 3.0 ≈ +9.5 dB "
+            "(peaks near full scale, mild saturation on loud chunks)."
+        ),
+        env_fallback="TTS_KOKORO_GAIN",
+    ),
+    SettingDefinition(
         key="tts.wake_system_prompt",
         category="tts",
         value_type="string",

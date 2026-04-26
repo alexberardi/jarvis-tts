@@ -40,23 +40,31 @@ def _lang_code_for_voice(voice: str) -> str:
     return voice[0].lower()
 
 
-def _float_to_int16_bytes(samples: np.ndarray) -> bytes:
-    """Convert float32 samples in [-1, 1] to little-endian 16-bit PCM bytes."""
-    clipped = np.clip(samples, -1.0, 1.0)
+def _float_to_int16_bytes(samples: np.ndarray, gain: float = 1.0) -> bytes:
+    """Convert float32 samples in [-1, 1] to little-endian 16-bit PCM bytes.
+
+    Optional `gain` multiplies samples before clipping. Used to compensate for
+    Kokoro's quiet output (~0.3-0.5 peak vs Piper's ~0.7-0.9). Clipping keeps
+    over-range samples bounded — slight saturation is preferable to inaudible
+    speech.
+    """
+    boosted = samples * gain if gain != 1.0 else samples
+    clipped = np.clip(boosted, -1.0, 1.0)
     ints = (clipped * 32767.0).astype(np.int16)
     return ints.tobytes()
 
 
 class KokoroTTSProvider(TTSProvider):
 
-    def __init__(self, voice: str = "bm_george", speed: float = 1.0, device: str = "cpu"):
+    def __init__(self, voice: str = "bm_george", speed: float = 1.0, device: str = "cpu", gain: float = 1.0):
         self._voice = voice
         self._speed = float(speed)
         self._device = device
+        self._gain = float(gain)
         lang_code = _lang_code_for_voice(voice)
         logger.info(
             f"Loading Kokoro pipeline (lang_code='{lang_code}', voice='{voice}', "
-            f"speed={speed}, device='{device}')"
+            f"speed={speed}, device='{device}', gain={gain})"
         )
         # device='cpu' is KPipeline's default; pass through unconditionally
         # so future values ('cuda', 'mps') work without branching here.
@@ -85,7 +93,7 @@ class KokoroTTSProvider(TTSProvider):
                 if first_chunk_at is None:
                     first_chunk_at = time.monotonic() - t0
                 samples = audio.detach().cpu().numpy() if hasattr(audio, "detach") else np.asarray(audio)
-                pcm_bytes = _float_to_int16_bytes(samples)
+                pcm_bytes = _float_to_int16_bytes(samples, gain=self._gain)
                 if not pcm_bytes:
                     continue
                 chunk_count += 1

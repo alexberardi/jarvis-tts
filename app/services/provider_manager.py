@@ -28,6 +28,12 @@ class _ProviderFingerprint:
     # Default "cpu" so older callers (tests / external tooling) that
     # predate this field still construct a valid fingerprint.
     kokoro_device: str = "cpu"
+    # Output amplitude multiplier for Kokoro — its raw output peaks well
+    # below full scale (~0.3-0.5) compared to Piper (~0.7-0.9), so without
+    # gain Kokoro sounds substantially quieter on the same hardware.
+    # 2.0 = +6 dB, the loudest setting that doesn't cause hard clipping
+    # distortion on typical Kokoro chunks (peaks ~0.5).
+    kokoro_gain: float = 2.0
 
 
 def _read_fingerprint() -> _ProviderFingerprint:
@@ -38,6 +44,7 @@ def _read_fingerprint() -> _ProviderFingerprint:
         kokoro_voice=settings.get_str("tts.kokoro_voice", "bm_george"),
         kokoro_speed=settings.get_float("tts.kokoro_speed", 1.25),
         kokoro_device=settings.get_str("tts.kokoro_device", "cpu"),
+        kokoro_gain=settings.get_float("tts.kokoro_gain", 2.0),
     )
 
 
@@ -50,6 +57,7 @@ def _build_provider(fp: _ProviderFingerprint) -> TTSProvider:
             voice=fp.kokoro_voice,
             speed=fp.kokoro_speed,
             device=fp.kokoro_device,
+            gain=fp.kokoro_gain,
         )
     return load_provider(fp.provider)
 
@@ -70,7 +78,8 @@ class ProviderManager:
             logger.info(
                 f"Loading TTS provider: {fp.provider} "
                 f"(piper_voice={fp.piper_voice}, kokoro_voice={fp.kokoro_voice}, "
-                f"kokoro_speed={fp.kokoro_speed}, kokoro_device={fp.kokoro_device})"
+                f"kokoro_speed={fp.kokoro_speed}, kokoro_device={fp.kokoro_device}, "
+                f"kokoro_gain={fp.kokoro_gain})"
             )
             try:
                 new_provider = _build_provider(fp)
