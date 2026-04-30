@@ -64,4 +64,7 @@ Thumbs.db
 logs/
 
 # Docker
-.dockerignore 
+.dockerignore
+
+# Virtual env (local)
+.venv/
