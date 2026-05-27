@@ -10,6 +10,7 @@ can be format-agnostic between providers.
 """
 
 import logging
+import threading
 import time
 from typing import Generator
 
@@ -69,6 +70,30 @@ class KokoroTTSProvider(TTSProvider):
         # device='cpu' is KPipeline's default; pass through unconditionally
         # so future values ('cuda', 'mps') work without branching here.
         self._pipeline = KPipeline(lang_code=lang_code, device=device)
+
+        # Pre-warm on a background thread so /health responds immediately.
+        # First inference on MPS pays an 8-9s graph-compile penalty (much
+        # smaller on CPU/CUDA, but still non-trivial), and the first
+        # user-perceived synth after a restart would otherwise be brutal.
+        # Throwaway phrase; output is dropped.
+        threading.Thread(
+            target=self._warmup, name="kokoro-warmup", daemon=True
+        ).start()
+
+    def _warmup(self) -> None:
+        t0 = time.monotonic()
+        try:
+            for _g, _p, _a in self._pipeline("warm", voice=self._voice, speed=self._speed):
+                # Drain at least one chunk to ensure inference + graph compile
+                # actually happen. KPipeline is lazy — iterating triggers work.
+                break
+        except Exception as e:
+            logger.warning("Kokoro warmup failed (will pay cold cost on first real synth): %s", e)
+            return
+        logger.info(
+            "Kokoro warm: device=%s elapsed=%.2fs (subsequent synths will be fast)",
+            self._device, time.monotonic() - t0,
+        )
 
     @property
     def name(self) -> str:
