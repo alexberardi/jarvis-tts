@@ -16,6 +16,17 @@ COPY app /app/app
 # Install Python deps. The `kokoro` extra pulls in kokoro + soundfile;
 # pin the extra in the build (see docker-compose to disable on low-mem hosts).
 COPY pyproject.toml .
+
+# Optional: pre-install torch from a non-default wheel index (e.g. the
+# CUDA-enabled wheels) BEFORE the kokoro extra. When TORCH_INDEX_URL is
+# set, pip picks up that torch and the kokoro install resolves against
+# it instead of pulling the default CPU wheel. Default empty = CPU torch,
+# matching the existing behavior. See docker-compose.gpu.yaml.
+ARG TORCH_INDEX_URL=""
+RUN if [ -n "$TORCH_INDEX_URL" ]; then \
+      pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" torch; \
+    fi
+
 ARG INSTALL_EXTRAS="kokoro"
 RUN if [ -n "$INSTALL_EXTRAS" ]; then \
       pip install --no-cache-dir ".[${INSTALL_EXTRAS}]"; \
