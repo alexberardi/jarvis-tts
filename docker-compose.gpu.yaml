@@ -1,0 +1,38 @@
+# ============================================================================
+# GPU overlay for jarvis-tts (NVIDIA / CUDA)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yaml -f docker-compose.gpu.yaml up -d
+#
+# Requirements on the host:
+#   - NVIDIA driver
+#   - nvidia-container-toolkit (already installed for jarvis-llm-proxy-api)
+#
+# What this overlay adds on top of docker-compose.prod.yaml:
+#   - Reserves all visible GPUs to the container (driver=nvidia, capabilities=[gpu])
+#   - Rebuilds the image with a CUDA-enabled torch wheel so Kokoro can pick
+#     `tts.kokoro_device=cuda` instead of falling back to cpu silently
+#
+# After bringing it up, flip `tts.kokoro_device=cuda` in admin and restart
+# the service. Cold start should drop to ~1-2s and warm first-byte to
+# ~50-100ms (vs CPU ~390ms or MPS ~150-250ms).
+# ============================================================================
+version: '3.9'
+
+services:
+  jarvis-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Pin the CUDA major.minor to whatever the host's NVIDIA driver
+        # supports. cu121 covers most recent installs; bump if the host
+        # already runs a newer toolkit (mirror what jarvis-llm-proxy-api uses).
+        TORCH_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
