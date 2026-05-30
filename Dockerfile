@@ -1,4 +1,10 @@
-FROM python:3.11-slim
+# Pinned by digest. Upstream tags (python:3.11-slim, nvidia/cuda) push
+# silent updates that can ABI-break native deps; the jarvis-whisper-api
+# v0.1.12 build picked up a newer cuBLAS rev that SIGILL'd whisper.cpp.
+# This is the digest the currently-deployed prod TTS image was built
+# against. Bump deliberately, not via tag drift. To refresh:
+#   docker buildx imagetools inspect python:3.11-slim
+FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
 
 WORKDIR /app
 
