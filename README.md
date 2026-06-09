@@ -1,11 +1,12 @@
 # Jarvis TTS
 
-A FastAPI-based text-to-speech service using Piper TTS for the Jarvis voice assistant project.
+A FastAPI-based text-to-speech service for the Jarvis voice assistant project, with two interchangeable providers: **Piper** (fast, baked into the image) and **Kokoro** (higher-quality, downloaded on first use). Provider selection is settings-driven with live hot-swap; failed loads fall back to Piper so the service never goes silent.
 
 ## Features
 
-- Text-to-speech synthesis using Piper TTS
-- Wake word response generation via LLM proxy
+- Text-to-speech synthesis via Piper or Kokoro (selectable at runtime)
+- Streaming raw PCM output for low-latency playback, plus buffered WAV
+- Wake word response generation via LLM proxy (deprecated shim — new callers should use `jarvis-command-center /api/v0/wake-response`)
 - Docker containerization
 - RESTful API endpoints
 
@@ -53,7 +54,8 @@ curl -X POST "http://localhost:7707/generate-wake-response"
 ## Requirements
 
 - Python 3.8+
-- Piper TTS
+- Piper TTS (always installed; baked-in ONNX voice)
+- Kokoro (optional; pulled in by the default `INSTALL_EXTRAS=kokoro` Docker build, weights downloaded on first use to `HF_HOME`)
 - FastAPI
 - httpx
 - python-dotenv 
