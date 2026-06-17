@@ -19,13 +19,28 @@ A FastAPI-based text-to-speech service for the Jarvis voice assistant project, w
 ## Setup
 
 1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
+2. Install dependencies (PEP 621 / setuptools project — no `requirements.txt`):
+   ```bash
+   pip install -e .            # base deps
+   pip install -e ".[kokoro]"  # optional Kokoro provider
+   ```
+   (Or just run `./run.sh --setup`, which creates a venv and installs the project plus the Kokoro extra.)
 3. Set up environment variables in `.env` file:
    ```
    JARVIS_LLM_PROXY_API_URL=your_llm_proxy_url
    JARVIS_LLM_PROXY_API_VERSION=your_api_version
    ```
-4. Download the required voice models to `app/models/`
+4. The Piper voice model is **not committed** — it is fetched on first run, the
+   same way Kokoro weights are. The Docker build downloads it automatically
+   (see the `wget` step in the `Dockerfile`). For a native/local run, download
+   the voice pair into `app/models/` once:
+   ```bash
+   mkdir -p app/models
+   wget https://huggingface.co/csukuangfj/vits-piper-en_GB-alan-low/resolve/main/en_GB-alan-low.onnx \
+        -O app/models/en_GB-alan-low.onnx
+   wget https://huggingface.co/csukuangfj/vits-piper-en_GB-alan-low/resolve/main/en_GB-alan-low.onnx.json \
+        -O app/models/en_GB-alan-low.onnx.json
+   ```
 5. Run the application: `uvicorn app.main:app --host 0.0.0.0 --port 7707`
 
 ## Docker
@@ -53,8 +68,8 @@ curl -X POST "http://localhost:7707/generate-wake-response"
 
 ## Requirements
 
-- Python 3.8+
-- Piper TTS (always installed; baked-in ONNX voice)
+- Python 3.11+
+- Piper TTS (always installed; ONNX voice baked into the Docker image at build time, downloaded on first run for native setups — see Setup step 4)
 - Kokoro (optional; pulled in by the default `INSTALL_EXTRAS=kokoro` Docker build, weights downloaded on first use to `HF_HOME`)
 - FastAPI
 - httpx

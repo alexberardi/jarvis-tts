@@ -6,6 +6,11 @@ CLAUDE.md
 .env
 .env.local
 .env.*.local
+.env.bak
+*.bak
+
+# Local working dirs / scratch
+memory/
 
 # Model files (large binary files)
 app/models/*.onnx
