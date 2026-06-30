@@ -10,8 +10,8 @@ Text-to-speech with **two interchangeable providers** (Piper as the always-avail
 
 | Provider | Default voice | Sample rate | Size | When to use |
 |---|---|---|---|---|
-| **Piper** (ONNX) | `en_GB-alan-low` | 22050 Hz | ~15 MB (baked into image) | Always available. Fast, robotic, reliable. Fallback when Kokoro fails. |
-| **Kokoro** (PyTorch / HF) | `bm_george` | 24000 Hz | ~300 MB (downloaded on first use to `HF_HOME`) | Natural prosody. Default in current settings. Quieter output — `tts.kokoro_gain` compensates (default 2.0 ≈ +6 dB). |
+| **Piper** (ONNX) | `en_GB-alan-low` | 22050 Hz | ~15 MB (baked into image) | **Default in current settings.** Always available, zero runtime egress. Fast, robotic, reliable. Fallback when Kokoro fails. |
+| **Kokoro** (PyTorch / HF) | `bm_george` | 24000 Hz | ~300 MB (downloaded on first use to `HF_HOME`) | Natural prosody. **Explicit opt-in** (set `tts.provider=kokoro`). Quieter output — `tts.kokoro_gain` compensates (default 2.0 ≈ +6 dB). |
 
 **Switch live:** update `tts.provider` via the settings API. Within ~60s (settings cache TTL) the provider manager notices the fingerprint change, swaps the active provider, and any in-flight requests using the old provider continue to completion. **Failed reload falls back to Piper with a warning log** — the service never goes silent.
 
@@ -65,7 +65,7 @@ curl -X POST http://localhost:7707/speak \
 ### Startup
 1. `service_config.init()` — discover other services
 2. `_setup_remote_logging()` — best-effort jarvis-logs hookup
-3. `get_active_provider()` — **pre-warm** the active provider (per `tts.provider` setting). Piper loads from disk (~100ms). Kokoro pulls weights from HF if not cached, then loads to device (`cpu` / `cuda` / `mps`) per `tts.kokoro_device`. **Failure is non-fatal** — provider manager falls back to Piper on first real request.
+3. `get_active_provider()` — **pre-warm** the active provider (per `tts.provider` setting; **default `piper`**, which loads from disk in ~100ms with zero runtime egress). When opted in to Kokoro, it pulls weights from HF if not cached, then loads to device (`cpu` / `cuda` / `mps`) per `tts.kokoro_device`. **Failure is non-fatal** — provider manager falls back to Piper on first real request.
 
 ### Per request
 1. **Auth** — `verify_app_auth` validates `X-Jarvis-App-Id` + `X-Jarvis-App-Key` via auth, surfaces `X-Context-*` headers (household, node).
@@ -165,7 +165,7 @@ Same pattern as the rest of the stack:
 
 | Key | Default | Notes |
 |---|---|---|
-| `tts.provider` | `kokoro` | `piper` \| `kokoro` |
+| `tts.provider` | `piper` | `piper` \| `kokoro` (kokoro is explicit opt-in — downloads HF weights on first use) |
 | `tts.default_voice` | `en_GB-alan-low` | Piper voice (stem under `app/models/`) |
 | `tts.kokoro_voice` | `bm_george` | Kokoro voice ID |
 | `tts.kokoro_speed` | `1.25` | Multiplier; >1 = faster |

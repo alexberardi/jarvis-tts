@@ -1,5 +1,6 @@
 """Tests for the provider registry, Piper provider wrapper, and provider manager."""
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -243,3 +244,35 @@ class TestBuildProvider:
             mock_load.assert_called_once_with(
                 "kokoro", voice="bm_george", speed=1.0, device="cuda", gain=2.0,
             )
+
+
+class TestReadFingerprintDefault:
+    """The default-resolution path of _read_fingerprint.
+
+    Privacy invariant: with no DB row and no TTS_PROVIDER override, the
+    service must land on the local, zero-egress provider (piper). Kokoro
+    pulls HF weights over the network, so it must never be reached
+    implicitly — only via an explicit opt-in (DB row or env).
+    """
+
+    def test_defaults_to_piper_with_no_db_row_and_no_env(self):
+        from jarvis_settings_client.service import SettingsService
+
+        from app.services.settings_definitions import SETTINGS_DEFINITIONS
+        from app.services.provider_manager import _read_fingerprint
+
+        # DB-less settings service → all lookups fall through to env/default.
+        db_less = SettingsService(
+            definitions=SETTINGS_DEFINITIONS,
+            get_db_session=lambda: None,
+            setting_model=None,
+        )
+
+        with patch.dict(os.environ, {}, clear=True), \
+             patch(
+                 "app.services.provider_manager.get_settings_service",
+                 return_value=db_less,
+             ):
+            fp = _read_fingerprint()
+
+        assert fp.provider == "piper"

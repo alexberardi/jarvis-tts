@@ -23,7 +23,7 @@ depends_on = None
 NEW_SETTINGS = [
     {
         "key": "tts.provider",
-        "value": "kokoro",
+        "value": "piper",
         "value_type": "string",
         "category": "tts",
         "description": "Active TTS provider backend",

@@ -39,7 +39,7 @@ class _ProviderFingerprint:
 def _read_fingerprint() -> _ProviderFingerprint:
     settings = get_settings_service()
     return _ProviderFingerprint(
-        provider=settings.get_str("tts.provider", "kokoro"),
+        provider=settings.get_str("tts.provider", "piper"),
         piper_voice=settings.get_str("tts.default_voice", "en_GB-alan-low"),
         kokoro_voice=settings.get_str("tts.kokoro_voice", "bm_george"),
         kokoro_speed=settings.get_float("tts.kokoro_speed", 1.25),

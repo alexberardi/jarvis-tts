@@ -6,8 +6,10 @@ These tests cover:
 - Helper methods
 """
 
+import importlib.util
 import os
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -54,6 +56,69 @@ class TestSettingsDefinitions:
         assert "tts.default_voice" in keys
         assert "server.port" in keys
         assert "auth.cache_ttl_seconds" in keys
+
+    def test_tts_provider_defaults_to_piper(self):
+        """tts.provider must default to piper (local, zero runtime egress).
+
+        Kokoro downloads HF weights on first use, so it stays an explicit
+        opt-in. The definition default is what a fresh install lands on when
+        no DB row and no env override exist.
+        """
+        provider_def = next(
+            d for d in SETTINGS_DEFINITIONS if d.key == "tts.provider"
+        )
+        assert provider_def.default == "piper"
+        assert provider_def.env_fallback == "TTS_PROVIDER"
+        assert "piper" in provider_def.options
+        assert "kokoro" in provider_def.options
+
+
+class TestProviderSeedMigration:
+    """Guards the alembic seed value for tts.provider.
+
+    There's no migration harness in this repo, so this is a string/AST-level
+    guard rather than a fresh-upgrade DB assertion: it loads migration 003's
+    NEW_SETTINGS list and asserts the seeded tts.provider value is 'piper'.
+
+    Fresh DBs seed piper (local, zero runtime egress). Already-migrated DBs
+    keep whatever row they have — there is deliberately NO flip-everyone
+    migration, so existing kokoro rows are left untouched.
+    """
+
+    def _load_migration_003(self):
+        migration_path = (
+            Path(__file__).resolve().parents[1]
+            / "alembic"
+            / "versions"
+            / "003_seed_multi_provider_settings.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "migration_003_seed_multi_provider_settings", migration_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_seed_value_for_tts_provider_is_piper(self):
+        module = self._load_migration_003()
+        seed = next(s for s in module.NEW_SETTINGS if s["key"] == "tts.provider")
+        assert seed["value"] == "piper"
+
+    def test_no_flip_everyone_update_for_tts_provider(self):
+        """The migration must not contain an UPDATE that rewrites existing
+        tts.provider rows (existing kokoro installs stay put)."""
+        migration_path = (
+            Path(__file__).resolve().parents[1]
+            / "alembic"
+            / "versions"
+            / "003_seed_multi_provider_settings.py"
+        )
+        source = migration_path.read_text()
+        # The only UPDATE in this migration touches tts.default_voice metadata,
+        # never tts.provider. A flip-everyone change would add an UPDATE keyed
+        # on tts.provider.
+        assert "UPDATE settings" in source  # the existing default_voice update
+        assert "key = 'tts.provider'" not in source
 
 
 class TestSettingsServiceCache:
