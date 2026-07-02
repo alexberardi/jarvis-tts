@@ -19,6 +19,15 @@ RUN apt-get update && apt-get install -y \
 # Copy app
 COPY app /app/app
 
+# Alembic migrations. The stack provisions a service's settings DB by flagging
+# `migrate: true` in the service registry, which makes the compose generator wrap
+# the container in an entrypoint that runs `python -m alembic upgrade head` before
+# the app CMD. That requires the migration env + versions to be present in the
+# image (matches jarvis-whisper-api). Without this, tts has no settings table and
+# every persisted settings write fails (reads silently fall back to env vars).
+COPY alembic /app/alembic
+COPY alembic.ini /app/alembic.ini
+
 # Install Python deps. The `kokoro` extra pulls in kokoro + soundfile;
 # pin the extra in the build (see docker-compose to disable on low-mem hosts).
 COPY pyproject.toml .
