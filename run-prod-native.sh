@@ -26,10 +26,16 @@ fi
 
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="${OBJC_DISABLE_INITIALIZE_FORK_SAFETY:-YES}"
 
-# Native macOS DB wiring: postgres runs in Docker, published on the host at
-# 127.0.0.1:${POSTGRES_PORT}. Docker services get DATABASE_URL injected by the
-# compose generator; native services must build it from the shared .env creds
-# (DB_USER + POSTGRES_PASSWORD). Only set when not already provided.
+# Native macOS service env: the Docker compose injects service-discovery URLs +
+# DATABASE_URL per container; native services must derive them from the shared
+# .env. config-service + postgres are published on the host (localhost).
+#
+# Service discovery: without JARVIS_CONFIG_URL the service can't find jarvis-auth.
+if [[ -z "${JARVIS_CONFIG_URL:-}" ]]; then
+    export JARVIS_CONFIG_URL="http://localhost:${CONFIG_SERVICE_PORT:-7700}"
+fi
+
+# DB: postgres runs in Docker, published on the host at 127.0.0.1:${POSTGRES_PORT}.
 if [[ -z "${DATABASE_URL:-}" ]]; then
     export DATABASE_URL="postgresql+psycopg2://${DB_USER:-jarvis}:${POSTGRES_PASSWORD:-}@127.0.0.1:${POSTGRES_PORT:-5432}/jarvis_tts"
 fi
