@@ -73,6 +73,21 @@ if [[ ! -f "$SENTINEL" || "$ROOT/pyproject.toml" -nt "$SENTINEL" ]]; then
     touch "$SENTINEL"
 fi
 
+# Piper voice model. The Dockerfile bakes this in at build time (it's always the
+# fallback TTS provider), but a native git clone has no image layer to inherit it
+# from — so fetch it here when absent. Public model; idempotent across restarts.
+# Download the .onnx LAST so its presence is a reliable "fully downloaded" guard
+# (a mid-download failure aborts under `set -e` before the guard file exists).
+PIPER_DIR="$ROOT/app/models"
+PIPER_ONNX="$PIPER_DIR/en_GB-alan-low.onnx"
+PIPER_BASE="https://huggingface.co/csukuangfj/vits-piper-en_GB-alan-low/resolve/main"
+if [[ ! -f "$PIPER_ONNX" ]]; then
+    echo "[tts-native] downloading Piper voice (en_GB-alan-low)"
+    mkdir -p "$PIPER_DIR"
+    curl -fsSL "$PIPER_BASE/en_GB-alan-low.onnx.json" -o "$PIPER_ONNX.json"
+    curl -fsSL "$PIPER_BASE/en_GB-alan-low.onnx" -o "$PIPER_ONNX"
+fi
+
 echo "[tts-native] running alembic migrations"
 "$PY" -m alembic upgrade head
 
