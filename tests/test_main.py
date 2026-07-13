@@ -51,12 +51,19 @@ class TestHealthEndpoint:
     def test_health_returns_healthy(self, client):
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "healthy"}
+        body = resp.json()
+        assert body["status"] == "healthy"
+        # /health reports the running version. On macOS this service runs from a
+        # git checkout under ~/.jarvis/native, so this is how an operator (and
+        # the platform updater) can tell which code is ACTUALLY live.
+        assert body["version"]
 
     def test_health_no_auth_required(self, unauthenticated_client):
         resp = unauthenticated_client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "healthy"}
+        body = resp.json()
+        assert body["status"] == "healthy"
+        assert body["version"]
 
 
 # ---------------------------------------------------------------------------

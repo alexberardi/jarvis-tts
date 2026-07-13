@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from app import service_config
 from app.deps import verify_app_auth
 from app.providers.base import TTSProvider
+from app.version import __version__
 from app.services.provider_manager import get_active_provider
 from app.services.settings_service import get_settings_service
 from jarvis_auth_client.models import AppAuthResult
@@ -113,7 +114,7 @@ def audio_format(
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "version": __version__}
 
 
 @app.post("/speak")
