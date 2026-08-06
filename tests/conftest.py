@@ -63,11 +63,23 @@ class FakeKPipeline:
         self.lang_code = lang_code
         self.init_kwargs = kwargs
 
-    def __call__(self, text: str, voice: str = "af_heart", speed: float = 1.0):
+    def __call__(
+        self,
+        text: str,
+        voice: str = "af_heart",
+        speed: float = 1.0,
+        split_pattern: str | None = None,
+    ):
+        import re
         import numpy as np
-        # Yield two segments of float32 silence to mimic streaming segmentation
-        for _ in range(2):
-            yield ("graphemes", "phonemes", np.zeros(1024, dtype=np.float32))
+        # Honor split_pattern like the real KPipeline: one audio segment per
+        # split part. Without one, mimic the legacy two-segment stream.
+        if split_pattern:
+            segments = [s for s in re.split(split_pattern, text) if s.strip()]
+        else:
+            segments = [text, text]
+        for seg in segments:
+            yield (seg, "phonemes", np.zeros(1024, dtype=np.float32))
 
 
 def _install_mock_modules() -> None:

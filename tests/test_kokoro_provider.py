@@ -99,8 +99,8 @@ class TestKokoroTTSProvider:
 
     def test_synthesize_yields_audio_chunks(self):
         provider = KokoroTTSProvider()
-        chunks = list(provider.synthesize("hello"))
-        # FakeKPipeline yields 2 segments
+        chunks = list(provider.synthesize("Hello there. How are you?"))
+        # One chunk per sentence (split-aware FakeKPipeline)
         assert len(chunks) == 2
         for chunk in chunks:
             assert isinstance(chunk, AudioChunk)
@@ -109,9 +109,22 @@ class TestKokoroTTSProvider:
             assert chunk.format.sample_width == 2
             assert len(chunk.audio_bytes) == 2048  # 1024 samples × 2 bytes
 
+    def test_synthesize_streams_per_sentence(self):
+        """Long single-paragraph responses must split on sentence boundaries.
+
+        LLM voice responses have no newlines; KPipeline's default split
+        (\\n+) would synthesize the whole paragraph as ONE chunk, so
+        time-to-first-audio grows linearly with response length (prod:
+        362 chars = 4.25s of silence before playback started).
+        """
+        provider = KokoroTTSProvider()
+        text = "The weather is sunny. Highs near 88 today! Rain arrives around 3pm?"
+        chunks = list(provider.synthesize(text))
+        assert len(chunks) == 3
+
     def test_synthesize_skips_none_audio(self, monkeypatch):
         """If the pipeline yields None for audio, skip that segment."""
-        def fake_pipeline(text, voice, speed):
+        def fake_pipeline(text, voice, speed, **kwargs):
             yield ("g", "p", None)
             yield ("g", "p", np.zeros(512, dtype=np.float32))
 
@@ -122,7 +135,7 @@ class TestKokoroTTSProvider:
 
     def test_synthesize_skips_empty_audio(self, monkeypatch):
         """Zero-length arrays yield no bytes and should be skipped."""
-        def fake_pipeline(text, voice, speed):
+        def fake_pipeline(text, voice, speed, **kwargs):
             yield ("g", "p", np.array([], dtype=np.float32))
             yield ("g", "p", np.zeros(256, dtype=np.float32))
 
@@ -143,7 +156,7 @@ class TestKokoroTTSProvider:
             def numpy(self):
                 return self._arr
 
-        def fake_pipeline(text, voice, speed):
+        def fake_pipeline(text, voice, speed, **kwargs):
             yield ("g", "p", FakeTensor(np.zeros(128, dtype=np.float32)))
 
         provider = KokoroTTSProvider()
@@ -164,3 +177,52 @@ class TestKokoroRegistry:
         from app.providers import registry as registry_mod
         provider = registry_mod.load_provider("kokoro", voice="bm_george", speed=1.25)
         assert provider.name == "kokoro"
+
+
+class TestDeviceFallback:
+    """An unavailable device must degrade to cpu at build time.
+
+    If the bad device reached KPipeline it would raise AFTER the model
+    weights load, and the provider manager retries the failed build on
+    every request — seconds of wasted I/O per synth plus warning spam.
+    """
+
+    @staticmethod
+    def _fake_torch(cuda_available: bool, mps_available: bool):
+        import types
+        return types.SimpleNamespace(
+            cuda=types.SimpleNamespace(is_available=lambda: cuda_available),
+            backends=types.SimpleNamespace(
+                mps=types.SimpleNamespace(is_available=lambda: mps_available),
+            ),
+        )
+
+    def test_cuda_unavailable_falls_back_to_cpu(self, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "torch", self._fake_torch(False, False))
+        provider = KokoroTTSProvider(device="cuda")
+        assert provider._device == "cpu"
+
+    def test_cuda_available_is_honored(self, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "torch", self._fake_torch(True, False))
+        provider = KokoroTTSProvider(device="cuda")
+        assert provider._device == "cuda"
+
+    def test_mps_unavailable_falls_back_to_cpu(self, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "torch", self._fake_torch(False, False))
+        provider = KokoroTTSProvider(device="mps")
+        assert provider._device == "cpu"
+
+    def test_missing_torch_falls_back_to_cpu(self, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "torch", None)  # import torch → ImportError
+        provider = KokoroTTSProvider(device="cuda")
+        assert provider._device == "cpu"
+
+    def test_cpu_needs_no_torch_probe(self, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "torch", None)
+        provider = KokoroTTSProvider(device="cpu")
+        assert provider._device == "cpu"

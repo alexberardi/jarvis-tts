@@ -28,6 +28,15 @@ _AUDIO_FORMAT = AudioFormat(
     channels=1,
 )
 
+# Split synthesis on sentence boundaries so audio streams sentence-by-sentence.
+# KPipeline's default split_pattern (\n+) never fires on LLM voice responses
+# (single paragraph, no newlines), so the whole reply synthesized as ONE chunk
+# and time-to-first-audio grew linearly with length (prod: 362 chars = 4.25s
+# of silence on cpu). The lookbehind keeps the punctuation with its sentence.
+# Mid-sentence abbreviations ("Dr. Smith") split early — a minor prosody
+# hiccup, worth it for constant first-audio latency.
+_SENTENCE_SPLIT_PATTERN = r"(?<=[.!?…])\s+"
+
 
 def _lang_code_for_voice(voice: str) -> str:
     """Infer Kokoro language code from voice prefix.
@@ -39,6 +48,41 @@ def _lang_code_for_voice(voice: str) -> str:
     if not voice:
         return "a"
     return voice[0].lower()
+
+
+def _resolve_device(requested: str) -> str:
+    """Degrade an unavailable device to cpu instead of failing the build.
+
+    A bad device (e.g. `tts.kokoro_device=cuda` in a container with no GPU
+    passthrough) would otherwise raise inside KPipeline *after* the model
+    weights load — and the provider manager retries a failed build on every
+    request, so each synth pays the full weight-load just to fail again.
+    Kokoro on cpu is fast (~0.5s/synth); a working cpu provider beats a
+    perpetually-failing cuda one.
+    """
+    if requested == "cpu":
+        return "cpu"
+    try:
+        import torch
+    except ImportError:
+        logger.warning(
+            "Kokoro device '%s' requested but torch is not importable — using cpu",
+            requested,
+        )
+        return "cpu"
+    if requested.startswith("cuda") and not torch.cuda.is_available():
+        logger.warning(
+            "Kokoro device '%s' requested but no CUDA device is available "
+            "(no GPU passthrough or cpu-only torch) — using cpu", requested,
+        )
+        return "cpu"
+    if requested.startswith("mps") and not torch.backends.mps.is_available():
+        logger.warning(
+            "Kokoro device '%s' requested but MPS is not available — using cpu",
+            requested,
+        )
+        return "cpu"
+    return requested
 
 
 def _float_to_int16_bytes(samples: np.ndarray, gain: float = 1.0) -> bytes:
@@ -60,16 +104,14 @@ class KokoroTTSProvider(TTSProvider):
     def __init__(self, voice: str = "bm_george", speed: float = 1.0, device: str = "cpu", gain: float = 1.0):
         self._voice = voice
         self._speed = float(speed)
-        self._device = device
+        self._device = _resolve_device(device)
         self._gain = float(gain)
         lang_code = _lang_code_for_voice(voice)
         logger.info(
             f"Loading Kokoro pipeline (lang_code='{lang_code}', voice='{voice}', "
-            f"speed={speed}, device='{device}', gain={gain})"
+            f"speed={speed}, device='{self._device}', gain={gain})"
         )
-        # device='cpu' is KPipeline's default; pass through unconditionally
-        # so future values ('cuda', 'mps') work without branching here.
-        self._pipeline = KPipeline(lang_code=lang_code, device=device)
+        self._pipeline = KPipeline(lang_code=lang_code, device=self._device)
 
         # Pre-warm on a background thread so /health responds immediately.
         # First inference on MPS pays an 8-9s graph-compile penalty (much
@@ -111,7 +153,12 @@ class KokoroTTSProvider(TTSProvider):
         first_chunk_at: float | None = None
         chunk_count: int = 0
         try:
-            generator = self._pipeline(text, voice=self._voice, speed=self._speed)
+            generator = self._pipeline(
+                text,
+                voice=self._voice,
+                speed=self._speed,
+                split_pattern=_SENTENCE_SPLIT_PATTERN,
+            )
             for _graphemes, _phonemes, audio in generator:
                 if audio is None:
                     continue
