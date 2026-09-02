@@ -73,3 +73,10 @@ logs/
 
 # Virtual env (local)
 .venv/
+
+# Per-host .env profiles (e.g. .env.mac used by scripts/jarvis-profile). These
+# hold REAL tokens and the shared MQTT credential. The existing `.env.local` /
+# `.env.*.local` patterns miss `.env.mac`, leaving it untracked-but-not-ignored
+# — one `git add .` from publishing secrets to a public repo.
+.env.*
+!.env.example
